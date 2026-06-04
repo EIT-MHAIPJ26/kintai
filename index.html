@@ -1,0 +1,1997 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+  <title>勤怠管理</title>
+  <style>
+    :root{
+      --primary:#06C755;--primary-dark:#05A847;--danger:#FF3B30;--danger-dark:#D93025;
+      --orange:#FF9500;--blue:#007AFF;--purple:#7B4FD4;--purple-light:#F0EBF9;
+      --bg:#F5F5F5;--card:#FFFFFF;--text:#1C1C1E;--subtext:#6C6C70;--border:#E5E5EA;
+      --shadow:0 2px 12px rgba(0,0,0,0.08);
+    }
+    *{margin:0;padding:0;box-sizing:border-box;}
+    body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+    header{background:var(--primary);color:white;padding:14px 20px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(6,199,85,.3);}
+    header .logo{font-size:20px;}
+    header h1{font-size:17px;font-weight:700;flex:1;}
+    .header-role{font-size:11px;background:rgba(255,255,255,.25);padding:3px 10px;border-radius:12px;font-weight:600;}
+    .header-role.admin{background:rgba(255,255,255,.35);}
+    .container{max-width:480px;margin:0 auto;padding:14px;}
+
+    /* ログイン選択カード */
+    .login-card{background:var(--card);border-radius:16px;padding:16px;margin-bottom:14px;box-shadow:var(--shadow);}
+    .login-card .lc-label{font-size:13px;color:var(--subtext);margin-bottom:8px;}
+    .login-row{display:flex;gap:8px;align-items:center;}
+    .login-row select{flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:15px;background:white;color:var(--text);appearance:none;}
+    .btn-login{background:var(--primary);color:white;border:none;border-radius:10px;padding:10px 16px;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap;}
+    .btn-login:hover{background:var(--primary-dark);}
+    /* ログイン済みバー */
+    .loggedin-bar{background:var(--card);border-radius:16px;padding:12px 16px;margin-bottom:14px;box-shadow:var(--shadow);display:flex;align-items:center;gap:10px;}
+    .loggedin-name{flex:1;font-size:16px;font-weight:700;}
+    .loggedin-role{font-size:11px;padding:3px 10px;border-radius:10px;font-weight:600;}
+    .loggedin-role.member{background:#E8F9EF;color:var(--primary-dark);}
+    .loggedin-role.admin{background:var(--purple-light);color:var(--purple);}
+    .btn-logout{background:none;border:1.5px solid var(--border);color:var(--subtext);border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;}
+    .btn-logout:hover{border-color:var(--danger);color:var(--danger);}
+    /* 管理ボタン */
+    .btn-manage{background:#F2F2F7;color:var(--subtext);border:none;border-radius:10px;padding:10px 14px;font-size:13px;cursor:pointer;font-weight:600;}
+    .btn-manage:hover{background:var(--border);}
+
+    /* 今日の状況 */
+    .status-card{background:var(--card);border-radius:16px;padding:18px;margin-bottom:14px;box-shadow:var(--shadow);}
+    .status-card .date-label{font-size:13px;color:var(--subtext);margin-bottom:3px;}
+    .status-card .today-date{font-size:19px;font-weight:700;margin-bottom:14px;}
+    .status-badge{display:inline-flex;align-items:center;gap:6px;padding:5px 13px;border-radius:20px;font-size:13px;font-weight:600;margin-bottom:12px;}
+    .status-badge.out{background:#F2F2F7;color:var(--subtext);}
+    .status-badge.in{background:#E8F9EF;color:var(--primary-dark);}
+    .status-dot{width:8px;height:8px;border-radius:50%;}
+    .status-badge.out .status-dot{background:var(--subtext);}
+    .status-badge.in .status-dot{background:var(--primary);animation:pulse 1.5s infinite;}
+    @keyframes pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.5;transform:scale(1.3);}}
+    .time-info{display:flex;gap:12px;flex-wrap:wrap;}
+    .time-item{flex:1;min-width:80px;}
+    .time-item .label{font-size:11px;color:var(--subtext);margin-bottom:2px;}
+    .time-item .value{font-size:19px;font-weight:700;font-variant-numeric:tabular-nums;}
+    .time-item .value.green{color:var(--primary-dark);}
+    .time-item .value.blue{color:var(--blue);}
+    .time-item .value.orange{color:var(--orange);}
+    .time-item .value.purple{color:var(--purple);}
+    /* 本日の打刻ペア一覧 */
+    .pairs-list{margin-top:12px;border-top:1px solid var(--border);padding-top:10px;}
+    .pair-row{display:flex;align-items:center;gap:8px;font-size:13px;padding:3px 0;}
+    .pair-row .pair-num{font-size:11px;color:var(--subtext);min-width:18px;}
+    .pair-row .pair-times{flex:1;font-variant-numeric:tabular-nums;}
+    .pair-row .pair-dur{font-size:11px;color:var(--subtext);}
+    /* 残業ステータスバー */
+    .ot-status-bar{margin-top:12px;padding:9px 13px;border-radius:10px;font-size:13px;}
+    .ot-status-bar.pending{background:#FFF8E1;color:#B8860B;border:1px solid #FFE082;}
+    .ot-status-bar.approved{background:#E8F9EF;color:var(--primary-dark);border:1px solid #A8E6C0;}
+    .ot-status-bar.rejected{background:#FFF0F0;color:var(--danger);border:1px solid #FFB3B3;}
+
+    /* 打刻ボタン */
+    .clock-buttons{display:flex;gap:10px;margin-bottom:10px;}
+    .btn-clock{flex:1;padding:14px;border:none;border-radius:14px;font-size:15px;font-weight:700;cursor:pointer;transition:all .15s;display:flex;flex-direction:column;align-items:center;gap:3px;}
+    .btn-clock:active{transform:scale(.97);}
+    .btn-clock .icon{font-size:22px;}
+    .btn-in{background:var(--primary);color:white;}
+    .btn-in:hover{background:var(--primary-dark);}
+    .btn-out{background:var(--danger);color:white;}
+    .btn-out:hover{background:var(--danger-dark);}
+    .btn-clock:disabled{background:#E5E5EA;color:#C7C7CC;cursor:not-allowed;transform:none;}
+    /* 申請ボタングリッド */
+    .apply-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;}
+    .btn-apply{padding:12px 8px;border:none;border-radius:14px;font-size:13px;font-weight:700;cursor:pointer;transition:all .15s;display:flex;flex-direction:column;align-items:center;gap:3px;}
+    .btn-apply:active{transform:scale(.97);}
+    .btn-apply .icon{font-size:20px;}
+    .btn-apply:disabled{background:#E5E5EA !important;color:#C7C7CC !important;cursor:not-allowed;transform:none;border-color:#E5E5EA !important;}
+    .btn-apply.btn-ot-g{background:white;color:var(--purple);border:2px solid var(--purple);}
+    .btn-apply.btn-ot-g:hover:not(:disabled){background:var(--purple-light);}
+    .btn-apply.btn-early{background:var(--blue);color:white;}
+    .btn-apply.btn-early:hover:not(:disabled){filter:brightness(.9);}
+    .btn-apply.btn-paid{background:var(--orange);color:white;}
+    .btn-apply.btn-paid:hover:not(:disabled){filter:brightness(.9);}
+    .btn-apply.btn-holiday-g{background:var(--danger);color:white;}
+    .btn-apply.btn-holiday-g:hover:not(:disabled){background:var(--danger-dark);}
+    /* 申請ステータスバー追加色 */
+    .ot-status-bar.early{background:#EBF4FF;color:var(--blue);border-color:#B3D4FF;}
+    .ot-status-bar.paid{background:#FFF3E0;color:#B55B00;border-color:#FFCC80;}
+    .ot-status-bar.holiday-work{background:#FFF0F0;color:var(--danger);border-color:#FFB3B3;}
+    /* ラジオボタン */
+    .radio-group{display:flex;gap:20px;padding:8px 0;}
+    .radio-group label{display:flex;align-items:center;gap:6px;font-size:14px;cursor:pointer;}
+
+    /* 今週サマリー */
+    .summary-card{background:var(--card);border-radius:16px;padding:16px 18px;margin-bottom:14px;box-shadow:var(--shadow);}
+    .card-title{font-size:14px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:6px;}
+    .week-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center;}
+    .week-day{font-size:11px;color:var(--subtext);margin-bottom:3px;}
+    .week-bar-wrap{height:48px;display:flex;align-items:flex-end;justify-content:center;}
+    .week-bar{width:100%;border-radius:4px 4px 0 0;min-height:4px;background:#E8F9EF;}
+    .week-bar.today{background:var(--primary);}
+    .week-bar.has-data{background:#A8E6C0;}
+    .week-hours{font-size:10px;color:var(--subtext);margin-top:2px;}
+
+    /* タブ */
+    .tabs{display:flex;background:var(--card);border-radius:12px;padding:4px;margin-bottom:14px;box-shadow:var(--shadow);gap:4px;}
+    .tab{flex:1;padding:7px 4px;border:none;border-radius:9px;background:transparent;font-size:12px;font-weight:600;color:var(--subtext);cursor:pointer;transition:all .2s;position:relative;}
+    .tab.active{background:var(--primary);color:white;}
+    .tab.active.admin-tab{background:var(--purple);}
+    .tab .badge{position:absolute;top:2px;right:2px;background:var(--danger);color:white;font-size:10px;font-weight:700;border-radius:8px;min-width:16px;height:16px;display:flex;align-items:center;justify-content:center;padding:0 4px;}
+
+    /* カード共通 */
+    .records-card{background:var(--card);border-radius:16px;padding:16px 18px;box-shadow:var(--shadow);margin-bottom:14px;}
+    .month-stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;}
+    .stat-item{background:#F8F8F8;border-radius:10px;padding:11px;text-align:center;}
+    .stat-item .stat-label{font-size:11px;color:var(--subtext);margin-bottom:3px;}
+    .stat-item .stat-value{font-size:19px;font-weight:700;}
+    .stat-item .stat-value.green{color:var(--primary-dark);}
+    .stat-item .stat-value.purple{color:var(--purple);}
+
+    /* 履歴リスト */
+    .record-item{display:flex;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--border);gap:10px;}
+    .record-item:last-child{border-bottom:none;}
+    .record-date{min-width:54px;}
+    .record-date .d{font-size:14px;font-weight:600;}
+    .record-date .wd{font-size:11px;color:var(--subtext);}
+    .record-times{flex:1;}
+    .record-times .times{font-size:13px;}
+    .record-times .duration{font-size:12px;color:var(--subtext);margin-top:2px;}
+    .record-times .ot-tag{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:600;padding:2px 7px;border-radius:6px;margin-top:3px;}
+    .record-times .ot-tag.pending{background:#FFF8E1;color:#B8860B;}
+    .record-times .ot-tag.approved{background:#E8F9EF;color:var(--primary-dark);}
+    .record-times .ot-tag.rejected{background:#FFF0F0;color:var(--danger);}
+    .record-status{font-size:12px;font-weight:600;padding:3px 8px;border-radius:6px;white-space:nowrap;}
+    .record-status.complete{background:#E8F9EF;color:var(--primary-dark);}
+    .record-status.working{background:#FFF3E0;color:var(--orange);}
+    .record-status.absent{background:#F2F2F7;color:var(--subtext);}
+    .empty-state{text-align:center;padding:28px;color:var(--subtext);font-size:14px;}
+
+    /* メンバー状況一覧 */
+    .member-status-grid{display:flex;flex-direction:column;gap:0;}
+    .ms-item{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border);}
+    .ms-item:last-child{border-bottom:none;}
+    .ms-avatar{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;}
+    .ms-avatar.working{background:#E8F9EF;}
+    .ms-avatar.done{background:#EBF4FF;}
+    .ms-avatar.absent{background:#F2F2F7;}
+    .ms-info{flex:1;min-width:0;}
+    .ms-name{font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .ms-times{font-size:12px;color:var(--subtext);margin-top:2px;font-variant-numeric:tabular-nums;}
+    .ms-right{text-align:right;flex-shrink:0;}
+    .ms-badge{font-size:11px;font-weight:700;padding:3px 9px;border-radius:10px;display:inline-block;}
+    .ms-badge.working{background:#E8F9EF;color:var(--primary-dark);}
+    .ms-badge.done{background:#EBF4FF;color:var(--blue);}
+    .ms-badge.absent{background:#F2F2F7;color:var(--subtext);}
+    .ms-dur{font-size:12px;color:var(--subtext);margin-top:3px;font-variant-numeric:tabular-nums;}
+    .ms-summary-row{display:flex;gap:8px;margin-bottom:14px;}
+    .ms-summary-item{flex:1;background:#F8F8F8;border-radius:10px;padding:10px;text-align:center;}
+    .ms-summary-item .ss-val{font-size:20px;font-weight:700;}
+    .ms-summary-item .ss-lbl{font-size:11px;color:var(--subtext);margin-top:2px;}
+    .ms-summary-item.working .ss-val{color:var(--primary-dark);}
+    .ms-summary-item.done .ss-val{color:var(--blue);}
+    .ms-summary-item.absent .ss-val{color:var(--subtext);}
+
+    /* 承認管理 */
+    .approval-item{padding:12px 0;border-bottom:1px solid var(--border);}
+    .approval-item:last-child{border-bottom:none;}
+    .approval-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;}
+    .approval-name{font-size:15px;font-weight:700;}
+    .approval-date{font-size:12px;color:var(--subtext);}
+    .approval-detail{font-size:13px;margin-bottom:4px;}
+    .approval-reason{font-size:13px;color:var(--subtext);margin-bottom:8px;background:#F8F8F8;padding:7px 10px;border-radius:8px;}
+    .approval-buttons{display:flex;gap:8px;}
+    .btn-approve{flex:1;padding:9px;background:var(--primary);color:white;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;}
+    .btn-approve:hover{background:var(--primary-dark);}
+    .btn-reject{flex:1;padding:9px;background:var(--danger);color:white;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;}
+    .btn-reject:hover{background:var(--danger-dark);}
+    .approval-done{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;padding:7px 11px;border-radius:10px;}
+    .approval-done.approved{background:#E8F9EF;color:var(--primary-dark);}
+    .approval-done.rejected{background:#FFF0F0;color:var(--danger);}
+
+    /* 管理者：打刻修正ボタン */
+    .btn-edit-time{font-size:12px;padding:4px 10px;border:1.5px solid var(--border);border-radius:8px;background:white;color:var(--subtext);cursor:pointer;white-space:nowrap;}
+    .btn-edit-time:hover{border-color:var(--blue);color:var(--blue);}
+
+    /* エクスポートボタン */
+    .export-btn{width:100%;padding:13px;background:white;color:var(--primary);border:1.5px solid var(--primary);border-radius:12px;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:14px;}
+    .export-btn:hover{background:#E8F9EF;}
+
+    /* モーダル共通 */
+    .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:200;justify-content:center;align-items:flex-end;}
+    .modal-overlay.show{display:flex;}
+    .modal{background:white;border-radius:20px 20px 0 0;padding:22px 18px 36px;width:100%;max-width:480px;animation:slideUp .25s ease-out;max-height:90vh;overflow-y:auto;}
+    @keyframes slideUp{from{transform:translateY(100%);}to{transform:translateY(0);}}
+    .modal h3{font-size:16px;font-weight:700;margin-bottom:14px;}
+    .modal label{font-size:13px;color:var(--subtext);display:block;margin-bottom:4px;margin-top:11px;}
+    .modal input,.modal select,.modal textarea{width:100%;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;font-family:inherit;background:white;color:var(--text);}
+    .modal input:focus,.modal select:focus,.modal textarea:focus{outline:none;border-color:var(--primary);}
+    .modal textarea{resize:none;height:76px;}
+    .modal-buttons{display:flex;gap:10px;margin-top:14px;}
+    .btn-confirm{flex:1;padding:13px;background:var(--primary);color:white;border:none;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;}
+    .btn-confirm.purple{background:var(--purple);}
+    .btn-confirm.blue{background:var(--blue);}
+    .btn-cancel{padding:13px 18px;background:var(--bg);color:var(--subtext);border:none;border-radius:12px;font-size:14px;cursor:pointer;}
+
+    /* メンバー管理モーダル */
+    .modal-manage{background:white;border-radius:20px 20px 0 0;padding:22px 18px 36px;width:100%;max-width:480px;animation:slideUp .25s ease-out;max-height:88vh;display:flex;flex-direction:column;}
+    .modal-manage h3{font-size:16px;font-weight:700;margin-bottom:3px;flex-shrink:0;}
+    .modal-manage .subtitle{font-size:12px;color:var(--subtext);margin-bottom:12px;flex-shrink:0;}
+    .member-list-wrap{flex:1;overflow-y:auto;margin-bottom:12px;}
+    .member-list-item{display:flex;align-items:center;gap:9px;padding:9px 0;border-bottom:1px solid var(--border);}
+    .member-list-item:last-child{border-bottom:none;}
+    .member-avatar{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;}
+    .member-avatar.member{background:#E8F9EF;}
+    .member-avatar.admin{background:var(--purple-light);}
+    .member-info{flex:1;}
+    .member-info .m-name{font-size:14px;font-weight:600;}
+    .member-info .m-role{font-size:11px;color:var(--subtext);}
+    .member-info .m-role.admin{color:var(--purple);font-weight:600;}
+    .member-actions{display:flex;align-items:center;gap:5px;flex-shrink:0;}
+    .btn-switch-user{background:none;border:1.5px solid var(--border);color:var(--subtext);font-size:11px;font-weight:600;padding:4px 9px;border-radius:8px;cursor:pointer;white-space:nowrap;}
+    .btn-switch-user:hover{border-color:var(--primary);color:var(--primary-dark);background:#E8F9EF;}
+    .btn-del-member{background:none;border:none;color:#C7C7CC;font-size:17px;cursor:pointer;padding:4px 7px;border-radius:8px;flex-shrink:0;}
+    .btn-del-member:hover{background:#FFF0F0;color:var(--danger);}
+    .add-section{border-top:1px solid var(--border);padding-top:12px;flex-shrink:0;}
+    .add-section .add-title{font-size:13px;font-weight:700;color:var(--subtext);margin-bottom:9px;}
+    .add-tabs{display:flex;gap:6px;margin-bottom:10px;}
+    .add-tab{flex:1;padding:7px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-weight:600;background:white;color:var(--subtext);cursor:pointer;}
+    .add-tab.active{border-color:var(--primary);background:#E8F9EF;color:var(--primary-dark);}
+    .add-form-single{display:flex;gap:7px;align-items:center;}
+    .add-form-single input{flex:1;border:1.5px solid var(--border);border-radius:10px;padding:9px 11px;font-size:13px;}
+    .add-form-single input:focus{outline:none;border-color:var(--primary);}
+    .add-form-single select{border:1.5px solid var(--border);border-radius:10px;padding:9px 8px;font-size:12px;background:white;}
+    .btn-add-inline{padding:9px 14px;background:var(--primary);color:white;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;}
+    .bulk-area{display:none;}
+    .bulk-area textarea{width:100%;border:1.5px solid var(--border);border-radius:10px;padding:9px 11px;font-size:13px;font-family:inherit;resize:none;height:80px;margin-bottom:7px;}
+    .bulk-area .bulk-hint{font-size:12px;color:var(--subtext);margin-bottom:7px;}
+    .bulk-area .bulk-role-row{display:flex;align-items:center;gap:8px;margin-bottom:9px;}
+    .bulk-area .bulk-role-row span{font-size:13px;color:var(--subtext);}
+    .bulk-area .bulk-role-row select{border:1.5px solid var(--border);border-radius:8px;padding:6px 10px;font-size:13px;background:white;}
+    .btn-bulk-add{width:100%;padding:10px;background:var(--primary);color:white;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;}
+    .modal-close-btn{width:100%;padding:11px;background:var(--bg);color:var(--subtext);border:none;border-radius:12px;font-size:14px;cursor:pointer;margin-top:9px;flex-shrink:0;}
+
+    /* 打刻修正モーダル */
+    .edit-pair-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+    .edit-pair-row .ep-num{font-size:12px;color:var(--subtext);min-width:20px;}
+    .edit-pair-row input[type="time"]{flex:1;border:1.5px solid var(--border);border-radius:9px;padding:8px 10px;font-size:14px;}
+    .edit-pair-row input[type="time"]:focus{outline:none;border-color:var(--blue);}
+    .edit-pair-row .ep-sep{color:var(--subtext);font-size:13px;}
+    .btn-del-pair{background:none;border:none;color:#C7C7CC;font-size:16px;cursor:pointer;padding:3px 6px;}
+    .btn-del-pair:hover{color:var(--danger);}
+    .btn-add-pair{width:100%;padding:9px;border:1.5px dashed var(--border);border-radius:10px;background:white;color:var(--subtext);font-size:13px;cursor:pointer;margin-top:4px;}
+    .btn-add-pair:hover{border-color:var(--blue);color:var(--blue);}
+
+    /* 退勤リマインダーバナー */
+    .reminder-banner{
+      position:fixed;bottom:0;left:0;right:0;z-index:250;
+      background:linear-gradient(135deg,#FF6B35,#FF3B30);
+      color:white;padding:14px 18px;
+      display:flex;align-items:center;gap:10px;
+      box-shadow:0 -4px 16px rgba(255,59,48,.35);
+      transform:translateY(100%);transition:transform .35s ease-out;
+    }
+    .reminder-banner.show{transform:translateY(0);}
+    .reminder-banner .rb-icon{font-size:22px;flex-shrink:0;}
+    .reminder-banner .rb-text{flex:1;font-size:13px;line-height:1.5;}
+    .reminder-banner .rb-text strong{font-size:14px;display:block;margin-bottom:2px;}
+    .reminder-banner .rb-close{background:rgba(255,255,255,.25);border:none;color:white;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0;}
+    .reminder-banner .rb-close:hover{background:rgba(255,255,255,.4);}
+
+    /* トースト */
+    .toast{position:fixed;bottom:72px;left:50%;transform:translateX(-50%) translateY(20px);background:rgba(0,0,0,.76);color:white;padding:9px 18px;border-radius:20px;font-size:13px;opacity:0;transition:all .3s;z-index:300;white-space:nowrap;}
+    .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+  </style>
+</head>
+<body>
+
+<header>
+  <span class="logo">🕐</span>
+  <h1>勤怠管理</h1>
+  <span id="syncIndicator" onclick="showSyncSettings()" title="クラウド同期設定" style="font-size:15px;cursor:pointer;opacity:0.7;margin-right:4px;"></span>
+  <span class="header-role" id="headerRole">---</span>
+</header>
+
+<div class="container">
+
+  <!-- ログイン前：名前選択 -->
+  <div id="loginSection" style="display:none">
+    <div class="login-card">
+      <div class="lc-label">名前を選んでください</div>
+      <div class="login-row">
+        <select id="loginSelect" onchange="onLoginNameChange()"></select>
+        <button class="btn-login" onclick="doLogin()">ログイン</button>
+      </div>
+      <div id="loginPasswordRow" style="display:none;margin-top:10px;">
+        <input type="password" id="loginPassword" placeholder="パスワードを入力"
+          style="width:100%;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:15px;"
+          onkeydown="if(event.key==='Enter')doLogin()"/>
+      </div>
+    </div>
+  </div>
+
+  <!-- ログイン後：名前バー -->
+  <div id="loggedinSection" style="display:none">
+    <div class="loggedin-bar">
+      <div class="loggedin-name" id="loggedinName">---</div>
+      <span class="loggedin-role" id="loggedinRole"></span>
+      <button class="btn-manage" id="btnManage" onclick="showManageModal()" style="display:none">👥 管理</button>
+      <button class="btn-logout" onclick="doLogout()">ログアウト</button>
+    </div>
+  </div>
+
+  <!-- 今日の状況 -->
+  <div class="status-card">
+    <div class="date-label">本日</div>
+    <div class="today-date" id="todayDate">---</div>
+    <div class="status-badge out" id="statusBadge">
+      <span class="status-dot"></span><span id="statusText">未出勤</span>
+    </div>
+    <div class="time-info">
+      <div class="time-item">
+        <div class="label">最初の出勤</div>
+        <div class="value green" id="clockInFirst">--:--</div>
+      </div>
+      <div class="time-item">
+        <div class="label">最後の退勤</div>
+        <div class="value blue" id="clockOutLast">--:--</div>
+      </div>
+      <div class="time-item">
+        <div class="label">合計勤務</div>
+        <div class="value orange" id="workDuration">--:--</div>
+      </div>
+      <div class="time-item">
+        <div class="label">残業予定</div>
+        <div class="value purple" id="otPlanned">--:--</div>
+      </div>
+    </div>
+    <div class="pairs-list" id="pairsList" style="display:none"></div>
+    <div id="otStatusBar" style="display:none"></div>
+    <div id="earlyStatusBar" style="display:none"></div>
+    <div id="paidStatusBar" style="display:none"></div>
+    <div id="holidayStatusBar" style="display:none"></div>
+    <!-- 管理者：打刻修正ボタン -->
+    <div id="adminEditArea" style="display:none;margin-top:12px;">
+      <button class="btn-edit-time" onclick="showEditModal()">✏️ 打刻を修正する</button>
+    </div>
+  </div>
+
+  <!-- 打刻ボタン -->
+  <div class="clock-buttons">
+    <button class="btn-clock btn-in" id="btnIn" onclick="clockIn()">
+      <span class="icon">☀️</span>出勤
+    </button>
+    <button class="btn-clock btn-out" id="btnOut" onclick="clockOut()" disabled>
+      <span class="icon">🌙</span>退勤
+    </button>
+  </div>
+  <!-- 申請ボタン（2×2グリッド） -->
+  <div class="apply-grid">
+    <button class="btn-apply btn-early" id="btnEarly" onclick="showEarlyModal()">
+      <span class="icon">🌅</span>早出申請
+    </button>
+    <button class="btn-apply btn-ot-g" id="btnOt" onclick="showOtModal()" disabled>
+      <span class="icon">🕐</span>残業申請
+    </button>
+    <button class="btn-apply btn-paid" id="btnPaid" onclick="showPaidModal()">
+      <span class="icon">📅</span>有給申請
+    </button>
+    <button class="btn-apply btn-holiday-g" id="btnHoliday" onclick="showHolidayModal()">
+      <span class="icon">🏢</span>休日出勤
+    </button>
+  </div>
+
+  <!-- 今週サマリー -->
+  <div class="summary-card">
+    <div class="card-title">📊 今週の勤務時間</div>
+    <div class="week-grid" id="weekGrid"></div>
+  </div>
+
+  <!-- タブ -->
+  <div class="tabs">
+    <button class="tab active" id="tab-month" onclick="switchTab('month')">今月</button>
+    <button class="tab" id="tab-history" onclick="switchTab('history')">履歴</button>
+    <button class="tab" id="tab-members" onclick="switchTab('members')" style="display:none">メンバー状況</button>
+    <button class="tab" id="tab-approval" onclick="switchTab('approval')" style="display:none">
+      承認管理<span class="badge" id="approvalBadge" style="display:none"></span>
+    </button>
+  </div>
+
+  <!-- 今月サマリー -->
+  <div id="view-month">
+    <div class="records-card">
+      <div class="card-title">📅 <span id="monthTitle">---</span>のサマリー</div>
+      <div class="month-stats">
+        <div class="stat-item"><div class="stat-label">出勤日数</div><div class="stat-value green" id="statDays">0 日</div></div>
+        <div class="stat-item"><div class="stat-label">合計勤務時間</div><div class="stat-value green" id="statTotal">0:00</div></div>
+        <div class="stat-item"><div class="stat-label">平均勤務時間</div><div class="stat-value" id="statAvg">0:00</div></div>
+        <div class="stat-item"><div class="stat-label">残業申請回数</div><div class="stat-value purple" id="statOt">0 回</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 履歴 -->
+  <div id="view-history" style="display:none">
+    <div class="records-card">
+      <div class="card-title">📋 勤務履歴</div>
+      <div id="historyList"></div>
+    </div>
+  </div>
+
+  <!-- メンバー状況（管理者のみ） -->
+  <div id="view-members" style="display:none">
+    <div class="records-card">
+      <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;">
+        <span>👥 本日のメンバー状況</span>
+        <button onclick="manualFetch()" id="fetchBtn" style="font-size:12px;padding:4px 10px;border:1.5px solid var(--border);border-radius:8px;background:white;color:var(--subtext);cursor:pointer;">🔄 更新</button>
+      </div>
+      <div id="gasNoticeBar" style="display:none;background:#FFF8E1;border:1px solid #FFE082;border-radius:8px;padding:9px 12px;font-size:12px;color:#856404;margin-bottom:10px;">
+        ⚠️ クラウド同期が未設定です。<a href="#" onclick="showSyncSettings();return false;" style="color:var(--blue);">⚙️ 設定する</a> と全員の打刻がリアルタイムで反映されます。
+      </div>
+      <div class="ms-summary-row" id="msSummaryRow"></div>
+      <div class="member-status-grid" id="memberStatusGrid"></div>
+    </div>
+  </div>
+
+  <!-- 承認管理 -->
+  <div id="view-approval" style="display:none">
+    <div class="records-card">
+      <div class="card-title">✅ 残業申請 承認管理</div>
+      <div id="approvalList"></div>
+    </div>
+  </div>
+
+  <button class="export-btn" onclick="exportCSV()">📥 CSVエクスポート</button>
+
+</div><!-- /container -->
+
+<!-- メンバー管理モーダル -->
+<div class="modal-overlay" id="modalManage" onclick="closeModalBg(event,'modalManage')">
+  <div class="modal-manage">
+    <h3>👥 メンバー管理</h3>
+    <div class="subtitle">名前を登録しておくとログイン時に選択できます</div>
+    <div class="member-list-wrap" id="memberListWrap"></div>
+    <div class="add-section">
+      <div class="add-title">メンバーを追加</div>
+      <div class="add-tabs">
+        <button class="add-tab active" id="addTab1" onclick="switchAddTab('single')">1人ずつ</button>
+        <button class="add-tab" id="addTab2" onclick="switchAddTab('bulk')">まとめて追加</button>
+      </div>
+      <div id="addFormSingle">
+        <div class="add-form-single">
+          <input type="text" id="newUserName" placeholder="名前を入力" maxlength="20"/>
+          <select id="newUserRole">
+            <option value="member">👤 メンバー</option>
+            <option value="admin">🔑 管理者</option>
+          </select>
+          <button class="btn-add-inline" onclick="addUser()">追加</button>
+        </div>
+      </div>
+      <div class="bulk-area" id="addFormBulk">
+        <div class="bulk-hint">名前を1行に1人ずつ入力してください</div>
+        <textarea id="bulkNames" placeholder="山田太郎&#10;鈴木花子"></textarea>
+        <div class="bulk-role-row">
+          <span>ロール：</span>
+          <select id="bulkRole">
+            <option value="member">👤 メンバー</option>
+            <option value="admin">🔑 管理者</option>
+          </select>
+        </div>
+        <button class="btn-bulk-add" onclick="bulkAddUsers()">まとめて追加</button>
+      </div>
+    </div>
+    <button class="modal-close-btn" onclick="hideModal('modalManage')">閉じる</button>
+  </div>
+</div>
+
+<!-- 残業申請モーダル -->
+<div class="modal-overlay" id="modalOt" onclick="closeModalBg(event,'modalOt')">
+  <div class="modal">
+    <h3>🕐 残業申請</h3>
+    <label>残業予定終了時刻</label>
+    <select id="otTime"></select>
+    <label>残業理由</label>
+    <textarea id="otReason" placeholder="残業の理由を入力してください"></textarea>
+    <div class="modal-buttons">
+      <button class="btn-cancel" onclick="hideModal('modalOt')">キャンセル</button>
+      <button class="btn-confirm purple" onclick="submitOt()">申請する</button>
+    </div>
+  </div>
+</div>
+
+<!-- 早出申請モーダル -->
+<div class="modal-overlay" id="modalEarly" onclick="closeModalBg(event,'modalEarly')">
+  <div class="modal">
+    <h3>🌅 早出申請</h3>
+    <label>対象日</label>
+    <input type="date" id="earlyDate"/>
+    <label>開始時刻（8:00まで）</label>
+    <select id="earlyStartTime"></select>
+    <div style="font-size:12px;color:var(--subtext);margin-top:4px;">終了時刻：8:00 固定</div>
+    <label>理由</label>
+    <textarea id="earlyReason" placeholder="早出の理由を入力してください"></textarea>
+    <div class="modal-buttons">
+      <button class="btn-cancel" onclick="hideModal('modalEarly')">キャンセル</button>
+      <button class="btn-confirm" style="background:var(--blue)" onclick="submitEarly()">申請する</button>
+    </div>
+  </div>
+</div>
+
+<!-- 有給申請モーダル -->
+<div class="modal-overlay" id="modalPaid" onclick="closeModalBg(event,'modalPaid')">
+  <div class="modal">
+    <h3>📅 有給申請</h3>
+    <label>対象日</label>
+    <input type="date" id="paidDate"/>
+    <label>開始時刻</label>
+    <select id="paidStartTime" onchange="updatePaidEndTimes()"></select>
+    <label>終了時刻</label>
+    <select id="paidEndTime"></select>
+    <label>理由（任意）</label>
+    <textarea id="paidReason" placeholder="有給取得の理由（省略可）"></textarea>
+    <div class="modal-buttons">
+      <button class="btn-cancel" onclick="hideModal('modalPaid')">キャンセル</button>
+      <button class="btn-confirm" style="background:var(--orange)" onclick="submitPaid()">申請する</button>
+    </div>
+  </div>
+</div>
+
+<!-- 休日出勤申請モーダル -->
+<div class="modal-overlay" id="modalHoliday" onclick="closeModalBg(event,'modalHoliday')">
+  <div class="modal">
+    <h3>🏢 休日出勤申請</h3>
+    <label>出勤日</label>
+    <input type="date" id="holidayWorkDate"/>
+    <label>勤務時間</label>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <input type="time" id="holidayStartTime" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;"/>
+      <span style="color:var(--subtext);">〜</span>
+      <input type="time" id="holidayEndTime" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;"/>
+    </div>
+    <label>理由</label>
+    <textarea id="holidayReason" placeholder="休日出勤の理由を入力してください"></textarea>
+    <label>振替希望</label>
+    <div class="radio-group">
+      <label><input type="radio" name="holidayComp" id="compYes" value="yes" onchange="toggleCompDate()"> あり</label>
+      <label><input type="radio" name="holidayComp" id="compNo"  value="no"  onchange="toggleCompDate()" checked> なし</label>
+    </div>
+    <div id="compDateSection" style="display:none">
+      <label>振替希望日</label>
+      <input type="date" id="compDate"/>
+      <label>希望時間帯（任意）</label>
+      <input type="text" id="compTime" placeholder="例：午前中、13:00〜17:00"/>
+    </div>
+    <div class="modal-buttons">
+      <button class="btn-cancel" onclick="hideModal('modalHoliday')">キャンセル</button>
+      <button class="btn-confirm" style="background:var(--danger)" onclick="submitHoliday()">申請する</button>
+    </div>
+  </div>
+</div>
+
+<!-- 却下理由モーダル -->
+<div class="modal-overlay" id="rejectModal" onclick="closeModalBg(event,'rejectModal')">
+  <div class="modal">
+    <h3>🚫 却下理由（任意）</h3>
+    <textarea id="rejectComment" placeholder="却下理由を入力（省略可）"></textarea>
+    <div class="modal-buttons">
+      <button class="btn-cancel" onclick="hideModal('rejectModal')">キャンセル</button>
+      <button class="btn-confirm" onclick="confirmReject()" style="background:var(--danger)">却下する</button>
+    </div>
+  </div>
+</div>
+
+<!-- 打刻修正モーダル（管理者のみ） -->
+<div class="modal-overlay" id="modalEdit" onclick="closeModalBg(event,'modalEdit')">
+  <div class="modal">
+    <h3>✏️ 打刻修正</h3>
+    <label>メンバー</label>
+    <select id="editMember" onchange="loadEditDate()"></select>
+    <label>日付</label>
+    <input type="date" id="editDate" onchange="loadEditPairs()"/>
+    <label>打刻記録</label>
+    <div id="editPairsList"></div>
+    <button class="btn-add-pair" onclick="addEditPair()">＋ 打刻ペアを追加</button>
+    <div class="modal-buttons">
+      <button class="btn-cancel" onclick="hideModal('modalEdit')">キャンセル</button>
+      <button class="btn-confirm blue" onclick="saveEditTime()">保存する</button>
+    </div>
+  </div>
+</div>
+
+<!-- パスワード設定モーダル（管理者のみ） -->
+<div class="modal-overlay" id="modalSetPassword" onclick="closeModalBg(event,'modalSetPassword')">
+  <div class="modal">
+    <h3>🔑 パスワード設定</h3>
+    <div id="setPasswordTarget" style="font-size:14px;font-weight:700;margin-bottom:4px;"></div>
+    <label>新しいパスワード</label>
+    <input type="password" id="setPasswordInput" placeholder="パスワードを入力（空欄で解除）"
+      onkeydown="if(event.key==='Enter')savePassword()"/>
+    <div style="font-size:12px;color:var(--subtext);margin-top:6px;">空欄のまま保存するとパスワードなしでログインできます</div>
+    <div class="modal-buttons">
+      <button class="btn-cancel" onclick="hideModal('modalSetPassword')">キャンセル</button>
+      <button class="btn-confirm blue" onclick="savePassword()">保存する</button>
+    </div>
+  </div>
+</div>
+
+<!-- クラウド同期設定モーダル -->
+<div class="modal-overlay" id="modalSync" onclick="closeModalBg(event,'modalSync')">
+  <div class="modal">
+    <h3>☁️ クラウド同期設定</h3>
+    <div style="background:#EBF4FF;border:1px solid #B3D4FF;border-radius:10px;padding:11px 13px;font-size:12px;line-height:1.7;color:#1A4A7A;margin-bottom:12px;">
+      Google スプレッドシートを使って全員の打刻データを共有します。<br>
+      設定するとメンバーが打刻するたびにスプレッドシートへ記録され、管理者の「メンバー状況」タブがリアルタイムに更新されます。<br><br>
+      <strong>初回セットアップ：</strong><br>
+      ① <code>gas-backend.gs</code> のコードをGoogle Apps Scriptに貼り付け<br>
+      ② 「ウェブアプリ」としてデプロイ（アクセス：全員）<br>
+      ③ 発行されたURLを下に貼り付けて保存
+    </div>
+    <label>GAS ウェブアプリURL</label>
+    <input type="url" id="gasUrlInput" placeholder="https://script.google.com/macros/s/..." style="font-size:12px;"/>
+    <button id="testSyncBtn" onclick="testSyncConnection()" style="width:100%;padding:9px;margin-top:8px;background:white;border:1.5px solid var(--blue);color:var(--blue);border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;">接続テスト</button>
+    <div class="modal-buttons">
+      <button class="btn-cancel" onclick="hideModal('modalSync')">キャンセル</button>
+      <button class="btn-confirm blue" onclick="saveSyncSettings()">保存する</button>
+    </div>
+  </div>
+</div>
+
+<!-- 退勤リマインダーバナー -->
+<div class="reminder-banner" id="reminderBanner">
+  <span class="rb-icon">⏰</span>
+  <div class="rb-text">
+    <strong>17:15 を過ぎています</strong>
+    退勤する場合は退勤ボタンを、残業する場合は残業申請をお願いします。
+  </div>
+  <button class="rb-close" onclick="dismissReminder()">閉じる</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================================================
+//  定数
+// ============================================================
+const STORAGE_KEY   = 'kintai_v4';
+const GAS_URL_KEY   = 'kintai_gas_url';
+
+// ▼▼▼ GASのURLをここに貼り付けてください ▼▼▼
+// GASデプロイ後に発行されたURLを下の '' の中に入れて Netlify に再アップロードする
+// 例: const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/xxxxx/exec';
+const DEFAULT_GAS_URL ='https://script.google.com/macros/s/AKfycbyrzdzTfWftz0py_F74tOqmr6XtfPauBGxSPyS43ep_uhYTj65dOSOat7Drq9BDA5klNg/exec';
+// ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+const SESSION_KEY   = 'kintai_session';
+const ADMIN_MEMBERS = ['北條みずき','大野　牧','鈴木史果'];
+const DEFAULT_MEMBERS = [
+  '阿部一憲','板倉充宏','大熊未来','大倉達也','大野　牧',
+  '小川由美香','梶本幸史','菊谷大輔','木村純子','小林厚子',
+  '鈴木加菜','鈴木史果','曽根亜紀','中島桂太','北條みずき','牧　峰史',
+  'マヘス','山口　曜','山崎恭一朗','山本亜希子','吉田貴美恵','吉田浩三'
+];
+const WEEKDAYS = ['日','月','火','水','木','金','土'];
+
+// 申請種別の定義
+const APP_TYPES = [
+  { key:'ot',      icon:'🕐', label:'残業申請',   barClass:'pending',     color:'var(--purple)' },
+  { key:'early',   icon:'🌅', label:'早出申請',   barClass:'early',       color:'var(--blue)'   },
+  { key:'paid',    icon:'📅', label:'有給申請',   barClass:'paid',        color:'#B55B00'       },
+  { key:'holiday', icon:'🏢', label:'休日出勤申請', barClass:'holiday-work', color:'var(--danger)' },
+];
+
+// ============================================================
+//  データ管理
+// ============================================================
+function loadData() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || { users:[], records:{} }; }
+  catch { return { users:[], records:{} }; }
+}
+function saveData() { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
+function loadSession() {
+  try { return localStorage.getItem(SESSION_KEY) || ''; }
+  catch { return ''; }
+}
+function saveSession(name) { localStorage.setItem(SESSION_KEY, name || ''); }
+
+let data = loadData();
+let currentUser = null;
+let pendingRejectKey = null;
+let addTabMode = 'single';
+// 個別設定 → なければHTMLに埋め込まれたデフォルトURLを使用
+let gasUrl = localStorage.getItem(GAS_URL_KEY) || DEFAULT_GAS_URL;
+
+// ============================================================
+//  クラウド同期（Google Apps Script）
+// ============================================================
+function updateSyncIndicator(status) {
+  const el = document.getElementById('syncIndicator');
+  if (!el) return;
+  if (!gasUrl) {
+    el.textContent = '⚙️'; el.title = 'クラウド同期を設定する'; el.style.opacity = '0.55'; return;
+  }
+  const map = {
+    idle:    { icon:'☁️',    title:'クラウド同期有効（タップで設定）' },
+    syncing: { icon:'🔄',    title:'同期中...' },
+    ok:      { icon:'☁️',    title:'同期済み' },
+    error:   { icon:'⚠️',   title:'同期エラー（タップで設定を確認）' }
+  };
+  const m = map[status] || map.idle;
+  el.textContent = m.icon; el.title = m.title; el.style.opacity = '1';
+}
+
+// 指定メンバー・日付の記録をGASへ送信
+function syncRecordToGAS(name, dateKey) {
+  if (!gasUrl) return;
+  const rec = getRecByKey(name, dateKey);
+  updateSyncIndicator('syncing');
+  fetch(gasUrl, {
+    method: 'POST',
+    body: JSON.stringify({ action:'upsertRecord', name, date:dateKey, pairs:rec.pairs||[], ot:rec.ot||null, early:rec.early||null, paid:rec.paid||null, holiday:rec.holiday||null })
+  })
+  .then(r => r.json())
+  .then(j => updateSyncIndicator(j.ok ? 'ok' : 'error'))
+  .catch(() => updateSyncIndicator('error'));
+}
+
+// GASから全員のデータを取得してローカルにマージ
+function fetchAllFromGAS(onDone) {
+  if (!gasUrl) { if (onDone) onDone(false); return; }
+  const btn = document.getElementById('fetchBtn');
+  if (btn) { btn.textContent = '🔄 取得中…'; btn.disabled = true; }
+  updateSyncIndicator('syncing');
+  fetch(gasUrl + '?t=' + Date.now())
+  .then(r => r.json())
+  .then(json => {
+    if (!json.ok || !json.records) { updateSyncIndicator('error'); if (onDone) onDone(false); return; }
+    const today = todayKey();
+    Object.entries(json.records).forEach(([name, recs]) => {
+      if (!data.records[name]) data.records[name] = {};
+      Object.entries(recs).forEach(([dk, rec]) => {
+        if (name === currentUser && dk === today) {
+          // 自分の今日分：打刻ペアはローカル優先、残業承認ステータスはGAS優先
+          if (!data.records[name][dk]) data.records[name][dk] = { pairs:[], ot:null };
+          if (rec.ot) data.records[name][dk].ot = rec.ot;
+          return;
+        }
+        data.records[name][dk] = rec;
+      });
+    });
+    saveData(); renderAll();
+    updateSyncIndicator('ok');
+    showToast('☁️ データを更新しました');
+    if (onDone) onDone(true);
+  })
+  .catch(() => { updateSyncIndicator('error'); showToast('❌ 同期失敗。URLを確認してください'); if (onDone) onDone(false); })
+  .finally(() => { if (btn) { btn.textContent = '🔄 更新'; btn.disabled = false; } });
+}
+
+// 手動更新ボタン
+function manualFetch() {
+  if (!gasUrl) { showSyncSettings(); return; }
+  fetchAllFromGAS();
+}
+
+// 同期設定モーダル
+function showSyncSettings() {
+  document.getElementById('gasUrlInput').value = gasUrl;
+  document.getElementById('modalSync').classList.add('show');
+}
+
+function saveSyncSettings() {
+  const url = document.getElementById('gasUrlInput').value.trim();
+  localStorage.setItem(GAS_URL_KEY, url);
+  gasUrl = url || DEFAULT_GAS_URL;
+  hideModal('modalSync');
+  if (url) {
+    showToast('🔗 GAS URLを保存しました');
+    fetchAllFromGAS();
+  } else if (DEFAULT_GAS_URL) {
+    updateSyncIndicator('idle');
+    showToast('個別設定を解除しました（共通URLで動作中）');
+  } else {
+    updateSyncIndicator('idle');
+    showToast('クラウド同期を解除しました');
+  }
+}
+
+function testSyncConnection() {
+  const url = document.getElementById('gasUrlInput').value.trim();
+  if (!url) { showToast('URLを入力してください'); return; }
+  const btn = document.getElementById('testSyncBtn');
+  btn.textContent = '確認中…'; btn.disabled = true;
+  fetch(url + '?t=' + Date.now())
+  .then(r => r.json())
+  .then(json => { showToast(json.ok !== false ? '✅ 接続成功！' : '⚠️ レスポンス異常: ' + (json.error||'')); })
+  .catch(() => showToast('❌ 接続失敗：URLを確認してください'))
+  .finally(() => { btn.textContent = '接続テスト'; btn.disabled = false; });
+}
+
+// ============================================================
+//  初期データ
+// ============================================================
+// メンバーリストが空なら初期登録
+if (data.users.length === 0) {
+  data.users = DEFAULT_MEMBERS.map(n => ({ name:n, role: ADMIN_MEMBERS.includes(n)?'admin':'member' }));
+  saveData();
+} else {
+  // 既存データへのロール反映 & 旧文字列形式変換
+  let updated = false;
+  data.users = data.users.map(u => {
+    const name = typeof u === 'string' ? u : u.name;
+    const currentRole = typeof u === 'string' ? 'member' : u.role;
+    const shouldBeAdmin = ADMIN_MEMBERS.includes(name);
+    if (shouldBeAdmin && currentRole !== 'admin') { updated = true; return { name, role:'admin' }; }
+    if (typeof u === 'string') { updated = true; return { name, role:'member' }; }
+    return u;
+  });
+  if (updated) saveData();
+}
+// 鈴木史果が未登録なら追加
+if (!data.users.find(u => (typeof u==='string'?u:u.name) === '鈴木史果')) {
+  data.users.push({ name:'鈴木史果', role:'admin' });
+  saveData();
+}
+
+// ============================================================
+//  ユーティリティ
+// ============================================================
+function toDateKey(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function todayKey(){ return toDateKey(new Date()); }
+function fmtTime(ts){ if(!ts)return '--:--'; const d=new Date(ts); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+function fmtMin(m){ if(m==null||m<0)return '--:--'; return Math.floor(m/60)+':'+String(m%60).padStart(2,'0'); }
+function showToast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2500);
+}
+function closeModalBg(e,id){ if(e.target.id===id)hideModal(id); }
+function hideModal(id){ document.getElementById(id).classList.remove('show'); }
+
+// ============================================================
+//  レコード構造（複数打刻ペア対応）
+// ============================================================
+// 新フォーマット: { pairs:[{in:ts,out:ts},...], ot:null }
+// 旧フォーマット: { in:ts, out:ts, ot:null } → 自動変換
+
+function migrateRec(rec) {
+  if (!rec) return { pairs:[], ot:null, early:null, paid:null, holiday:null };
+  // 旧形式（pairs なし）を変換
+  if (!rec.pairs) {
+    const pair = { in: rec.in||null, out: rec.out||null };
+    rec = { pairs: pair.in ? [pair] : [], ot: rec.ot||null };
+  }
+  // 新フィールドが未定義なら null で補完
+  if (!('early'   in rec)) rec.early   = null;
+  if (!('paid'    in rec)) rec.paid    = null;
+  if (!('holiday' in rec)) rec.holiday = null;
+  return rec;
+}
+
+function getUserRecords(name) {
+  const n = name || currentUser;
+  if (!n) return {};
+  if (!data.records[n]) data.records[n] = {};
+  return data.records[n];
+}
+
+function getTodayRec(name) {
+  const recs = getUserRecords(name);
+  const key = todayKey();
+  recs[key] = migrateRec(recs[key]);
+  return recs[key];
+}
+
+function getRecByKey(name, dateKey) {
+  const recs = getUserRecords(name);
+  recs[dateKey] = migrateRec(recs[dateKey]);
+  return recs[dateKey];
+}
+
+// 合計勤務分数（ペア合算）
+function totalMinForRec(rec, isToday) {
+  let total = 0;
+  (rec.pairs||[]).forEach(p => {
+    if (p.in && p.out) total += Math.floor((p.out - p.in)/60000);
+    else if (p.in && !p.out && isToday) total += Math.floor((Date.now() - p.in)/60000);
+  });
+  return total;
+}
+
+function isCurrentlyWorking(rec) {
+  const pairs = rec.pairs||[];
+  return pairs.length > 0 && !!pairs[pairs.length-1].in && !pairs[pairs.length-1].out;
+}
+
+// ============================================================
+//  ユーザー管理
+// ============================================================
+function getUserRole(name) {
+  const u = data.users.find(u => (typeof u==='string'?u:u.name) === name);
+  return u ? (typeof u==='string'?'member':u.role) : 'member';
+}
+function getUserNames() { return data.users.map(u => typeof u==='string'?u:u.name); }
+function isAdmin(name) { return getUserRole(name) === 'admin'; }
+
+// ============================================================
+//  パスワード管理
+// ============================================================
+function getUserPassword(name) {
+  const u = data.users.find(u => (typeof u==='string'?u:u.name) === name);
+  return u?.password || '';
+}
+
+function onLoginNameChange() {
+  const name = document.getElementById('loginSelect').value;
+  const hasPw = !!getUserPassword(name);
+  const pwRow = document.getElementById('loginPasswordRow');
+  pwRow.style.display = (name && hasPw) ? '' : 'none';
+  if (hasPw) {
+    document.getElementById('loginPassword').value = '';
+    setTimeout(() => document.getElementById('loginPassword').focus(), 100);
+  }
+}
+
+let setPasswordTargetName = null;
+function showSetPasswordModal(name) {
+  setPasswordTargetName = name;
+  const hasPw = !!getUserPassword(name);
+  document.getElementById('setPasswordTarget').textContent = '👤 ' + name + (hasPw ? '（設定済み）' : '（未設定）');
+  document.getElementById('setPasswordInput').value = '';
+  document.getElementById('modalSetPassword').classList.add('show');
+  setTimeout(() => document.getElementById('setPasswordInput').focus(), 300);
+}
+
+function savePassword() {
+  const pw = document.getElementById('setPasswordInput').value;
+  const u = data.users.find(u => (typeof u==='string'?u:u.name) === setPasswordTargetName);
+  if (u) {
+    if (pw) { u.password = pw; }
+    else { delete u.password; }
+    saveData();
+  }
+  hideModal('modalSetPassword');
+  renderMemberList();
+  showToast(pw ? '🔑 '+setPasswordTargetName+' のパスワードを設定しました' : '🔓 '+setPasswordTargetName+' のパスワードを解除しました');
+}
+
+// ============================================================
+//  セッション（ログイン/ログアウト）
+// ============================================================
+function doLogin() {
+  const name = document.getElementById('loginSelect').value;
+  if (!name) { showToast('名前を選んでください'); return; }
+  const pw = document.getElementById('loginPassword').value;
+  const storedPw = getUserPassword(name);
+  if (storedPw && storedPw !== pw) {
+    showToast('❌ パスワードが違います');
+    document.getElementById('loginPassword').select();
+    return;
+  }
+  currentUser = name;
+  saveSession(name);
+  renderAll();
+  requestNotifPermission();
+  checkOvertimeReminder();
+  // 管理者ログイン時はGASから最新データを取得してバッジを更新
+  if (isAdmin(name) && gasUrl) fetchAllFromGAS();
+}
+
+function doLogout() {
+  currentUser = null;
+  saveSession('');
+  document.getElementById('loginPasswordRow').style.display = 'none';
+  document.getElementById('loginPassword').value = '';
+  renderAll();
+}
+
+function renderLoginSection() {
+  const loggedIn = !!currentUser;
+  document.getElementById('loginSection').style.display   = loggedIn ? 'none' : '';
+  document.getElementById('loggedinSection').style.display = loggedIn ? '' : 'none';
+
+  if (!loggedIn) {
+    // ログイン選択肢を構築
+    const sel = document.getElementById('loginSelect');
+    sel.innerHTML = '<option value="">-- 名前を選択 --</option>';
+    getUserNames().forEach(n => {
+      const opt = document.createElement('option');
+      opt.value = n;
+      opt.textContent = (isAdmin(n) ? '🔑 ' : '👤 ') + n;
+      sel.appendChild(opt);
+    });
+  } else {
+    document.getElementById('loggedinName').textContent = currentUser;
+    const roleEl = document.getElementById('loggedinRole');
+    if (isAdmin(currentUser)) {
+      roleEl.textContent = '🔑 管理者';
+      roleEl.className = 'loggedin-role admin';
+      document.getElementById('btnManage').style.display = '';
+    } else {
+      roleEl.textContent = '👤 メンバー';
+      roleEl.className = 'loggedin-role member';
+      document.getElementById('btnManage').style.display = 'none';
+    }
+  }
+}
+
+// ============================================================
+//  メンバー管理モーダル
+// ============================================================
+function showManageModal() {
+  renderMemberList();
+  document.getElementById('newUserName').value = '';
+  document.getElementById('newUserRole').value = 'member';
+  document.getElementById('bulkNames').value = '';
+  switchAddTab('single');
+  document.getElementById('modalManage').classList.add('show');
+}
+
+function renderMemberList() {
+  const wrap = document.getElementById('memberListWrap');
+  const names = getUserNames();
+  if (names.length === 0) { wrap.innerHTML='<div class="empty-state" style="padding:20px">まだメンバーがいません</div>'; return; }
+  wrap.innerHTML = '';
+  names.forEach(n => {
+    const role = getUserRole(n);
+    const isActive = n === currentUser;
+    const item = document.createElement('div');
+    item.className = 'member-list-item';
+    item.innerHTML = `
+      <div class="member-avatar ${role}">${role==='admin'?'🔑':'👤'}</div>
+      <div class="member-info">
+        <div class="m-name">${n}${isActive?' <span style="font-size:10px;color:var(--primary-dark)">（使用中）</span>':''}</div>
+        <div class="m-role ${role}">${role==='admin'?'管理者':'メンバー'}</div>
+      </div>
+      <div class="member-actions">
+        <button class="btn-switch-user" onclick="showSetPasswordModal('${n}')" title="パスワード設定" style="font-size:13px;">🔑</button>
+        ${!isActive?`<button class="btn-switch-user" onclick="switchToUser('${n}')">切替</button>`:''}
+        <button class="btn-del-member" onclick="deleteMember('${n}')" title="削除">✕</button>
+      </div>`;
+    wrap.appendChild(item);
+  });
+}
+
+function switchToUser(name) {
+  currentUser = name;
+  saveSession(name);
+  renderMemberList();
+  renderAll();
+  showToast('👤 '+name+' に切り替えました');
+}
+
+function deleteMember(name) {
+  if (!confirm('「'+name+'」を削除しますか？（勤怠記録は残ります）')) return;
+  data.users = data.users.filter(u => (typeof u==='string'?u:u.name) !== name);
+  if (currentUser === name) { currentUser = null; saveSession(''); }
+  saveData();
+  renderMemberList();
+  renderAll();
+  showToast('🗑️ '+name+' を削除しました');
+}
+
+function switchAddTab(mode) {
+  addTabMode = mode;
+  document.getElementById('addTab1').className = 'add-tab'+(mode==='single'?' active':'');
+  document.getElementById('addTab2').className = 'add-tab'+(mode==='bulk'?' active':'');
+  document.getElementById('addFormSingle').style.display = mode==='single'?'':'none';
+  document.getElementById('addFormBulk').style.display   = mode==='bulk'?'':'none';
+}
+
+function addUser() {
+  const name = document.getElementById('newUserName').value.trim();
+  const role = document.getElementById('newUserRole').value;
+  if (!name) { showToast('名前を入力してください'); return; }
+  if (getUserNames().includes(name)) { showToast('「'+name+'」はすでに登録されています'); return; }
+  data.users.push({ name, role });
+  saveData();
+  renderMemberList();
+  renderAll();
+  document.getElementById('newUserName').value = '';
+  showToast('✅ '+name+' を追加しました');
+}
+
+function bulkAddUsers() {
+  const lines = document.getElementById('bulkNames').value.split('\n');
+  const role = document.getElementById('bulkRole').value;
+  const existing = getUserNames();
+  let added=0, skipped=0;
+  lines.forEach(line => {
+    const name = line.trim();
+    if (!name) return;
+    if (existing.includes(name)) { skipped++; return; }
+    data.users.push({ name, role }); added++;
+    existing.push(name);
+  });
+  if (added===0) { showToast('追加できる名前がありませんでした'); return; }
+  saveData(); renderMemberList(); renderAll();
+  document.getElementById('bulkNames').value = '';
+  showToast('✅ '+added+'名を追加しました'+(skipped?'（'+skipped+'名スキップ）':''));
+}
+document.getElementById('newUserName').addEventListener('keydown', e=>{ if(e.key==='Enter')addUser(); });
+
+// ============================================================
+//  打刻
+// ============================================================
+function clockIn() {
+  if (!currentUser) { showToast('先にログインしてください'); return; }
+  const rec = getTodayRec();
+  if (isCurrentlyWorking(rec)) { showToast('すでに出勤中です'); return; }
+  rec.pairs.push({ in: Date.now(), out: null });
+  saveData(); renderAll();
+  syncRecordToGAS(currentUser, todayKey());
+  showToast('☀️ 出勤しました！ '+fmtTime(rec.pairs[rec.pairs.length-1].in));
+}
+
+function clockOut() {
+  if (!currentUser) return;
+  const rec = getTodayRec();
+  if (!isCurrentlyWorking(rec)) { showToast('出勤打刻がありません'); return; }
+  const lastPair = rec.pairs[rec.pairs.length-1];
+  lastPair.out = Date.now();
+  const min = Math.floor((lastPair.out - lastPair.in)/60000);
+  saveData(); renderAll();
+  syncRecordToGAS(currentUser, todayKey());
+  showToast('🌙 退勤しました！ '+fmtMin(min));
+}
+
+// ============================================================
+//  申請 共通ユーティリティ
+// ============================================================
+function getAppSummary(rec, type) {
+  const a = rec[type];
+  if (!a) return '';
+  const stMap = { pending:'承認待ち', approved:'承認済み', rejected:'却下' };
+  const st = stMap[a.status] || '';
+  switch (type) {
+    case 'ot':      return `残業 〜${a.plannedEnd} ${st}`;
+    case 'early':   return `早出 ${a.startTime}〜8:00 ${st}`;
+    case 'paid':    return `有給 ${a.startTime}〜${a.endTime} ${st}`;
+    case 'holiday':
+      const comp = a.wantComp ? `（振替：${a.compDate}${a.compTime?' '+a.compTime:''}）` : '（振替なし）';
+      return `休日出勤 ${a.workDate} ${a.startTime||''}〜${a.endTime||''}${comp} ${st}`;
+  }
+  return '';
+}
+
+// 汎用承認
+function approveApplication(userName, dateKey, type) {
+  const rec = getRecByKey(userName, dateKey);
+  if (!rec?.[type]) return;
+  rec[type].status = 'approved';
+  rec[type].approvedBy = currentUser;
+  rec[type].approvedAt = Date.now();
+  saveData(); renderAll();
+  syncRecordToGAS(userName, dateKey);
+  showToast('✅ 承認しました');
+}
+
+// ============================================================
+//  残業申請
+// ============================================================
+function buildOtTimes() {
+  const sel = document.getElementById('otTime');
+  sel.innerHTML = '';
+  for (let h=17; h<=24; h++) {
+    const mins = h===17?[30,45]:h===24?[0]:[0,15,30,45];
+    mins.forEach(m => {
+      const opt = document.createElement('option');
+      const label = String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');
+      opt.value = label; opt.textContent = label;
+      sel.appendChild(opt);
+    });
+  }
+}
+buildOtTimes();
+
+function showOtModal() {
+  if (!currentUser) return;
+  const rec = getTodayRec();
+  if (rec.ot) {
+    if (rec.ot.status==='pending')  { showToast('申請中です。承認をお待ちください'); return; }
+    if (rec.ot.status==='approved') { showToast('承認済みです'); return; }
+  }
+  document.getElementById('otReason').value = '';
+  if (rec.ot?.plannedEnd) document.getElementById('otTime').value = rec.ot.plannedEnd;
+  document.getElementById('modalOt').classList.add('show');
+}
+
+function submitOt() {
+  const plannedEnd = document.getElementById('otTime').value;
+  const reason = document.getElementById('otReason').value.trim();
+  if (!reason) { showToast('残業理由を入力してください'); return; }
+  const rec = getTodayRec();
+  rec.ot = { plannedEnd, reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
+  saveData(); renderAll(); hideModal('modalOt');
+  syncRecordToGAS(currentUser, todayKey());
+  showToast('📋 残業申請を送信しました（'+plannedEnd+'まで）');
+}
+
+function approveOt(userName, dateKey) {
+  const rec = getRecByKey(userName, dateKey);
+  if (!rec?.ot) return;
+  rec.ot.status = 'approved'; rec.ot.approvedBy = currentUser; rec.ot.approvedAt = Date.now();
+  saveData(); renderAll();
+  syncRecordToGAS(userName, dateKey);
+  showToast('✅ '+userName+'の残業申請を承認しました');
+}
+
+function showRejectModal(userName, dateKey, type) {
+  type = type || 'ot';
+  pendingRejectKey = userName+'|'+dateKey+'|'+type;
+  document.getElementById('rejectComment').value = '';
+  document.getElementById('rejectModal').classList.add('show');
+}
+
+function confirmReject() {
+  if (!pendingRejectKey) return;
+  const parts = pendingRejectKey.split('|');
+  const userName = parts[0], dateKey = parts[1], type = parts[2] || 'ot';
+  const rec = getRecByKey(userName, dateKey);
+  if (rec?.[type]) {
+    rec[type].status='rejected'; rec[type].approvedBy=currentUser; rec[type].approvedAt=Date.now();
+    rec[type].comment = document.getElementById('rejectComment').value.trim();
+  }
+  pendingRejectKey = null; saveData(); renderAll(); hideModal('rejectModal');
+  syncRecordToGAS(userName, dateKey);
+  showToast('🚫 却下しました');
+}
+
+// ============================================================
+//  早出申請
+// ============================================================
+function buildEarlyTimes() {
+  const sel = document.getElementById('earlyStartTime');
+  sel.innerHTML = '';
+  for (let h = 5; h <= 7; h++) {
+    for (const m of [0, 15, 30, 45]) {
+      if (h === 7 && m > 45) continue;
+      const label = String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
+      const opt = document.createElement('option');
+      opt.value = label; opt.textContent = label;
+      sel.appendChild(opt);
+    }
+  }
+}
+
+function showEarlyModal() {
+  if (!currentUser) return;
+  buildEarlyTimes();
+  document.getElementById('earlyDate').value = todayKey();
+  document.getElementById('earlyReason').value = '';
+  document.getElementById('modalEarly').classList.add('show');
+}
+
+function submitEarly() {
+  const date      = document.getElementById('earlyDate').value;
+  const startTime = document.getElementById('earlyStartTime').value;
+  const reason    = document.getElementById('earlyReason').value.trim();
+  if (!date)   { showToast('対象日を選択してください'); return; }
+  if (!reason) { showToast('理由を入力してください'); return; }
+  const rec = getRecByKey(currentUser, date);
+  if (rec.early?.status === 'pending')  { showToast('申請中です'); return; }
+  if (rec.early?.status === 'approved') { showToast('承認済みです'); return; }
+  rec.early = { startTime, reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
+  saveData(); renderAll(); hideModal('modalEarly');
+  syncRecordToGAS(currentUser, date);
+  showToast('🌅 早出申請を送信しました（'+startTime+'〜8:00）');
+}
+
+// ============================================================
+//  有給申請
+// ============================================================
+function getPaidTimes() {
+  const times = [];
+  for (let h = 8; h <= 17; h++) {
+    for (const m of [15, 45]) {
+      if (h === 8  && m < 15) continue;
+      if (h === 17 && m > 15) continue;
+      times.push(String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0'));
+    }
+  }
+  return times;
+}
+
+function buildPaidTimes(selId, afterTime) {
+  const sel = document.getElementById(selId);
+  const prev = sel.value;
+  sel.innerHTML = '';
+  getPaidTimes().forEach(t => {
+    if (afterTime && t <= afterTime) return;
+    const opt = document.createElement('option');
+    opt.value = t; opt.textContent = t;
+    if (t === prev) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+function updatePaidEndTimes() {
+  buildPaidTimes('paidEndTime', document.getElementById('paidStartTime').value);
+}
+
+function showPaidModal() {
+  if (!currentUser) return;
+  document.getElementById('paidDate').value = todayKey();
+  document.getElementById('paidReason').value = '';
+  buildPaidTimes('paidStartTime', null);
+  updatePaidEndTimes();
+  document.getElementById('modalPaid').classList.add('show');
+}
+
+function submitPaid() {
+  const date      = document.getElementById('paidDate').value;
+  const startTime = document.getElementById('paidStartTime').value;
+  const endTime   = document.getElementById('paidEndTime').value;
+  const reason    = document.getElementById('paidReason').value.trim();
+  if (!date)    { showToast('対象日を選択してください'); return; }
+  if (!endTime) { showToast('終了時刻を選択してください'); return; }
+  const rec = getRecByKey(currentUser, date);
+  if (rec.paid?.status === 'pending')  { showToast('申請中です'); return; }
+  if (rec.paid?.status === 'approved') { showToast('承認済みです'); return; }
+  rec.paid = { startTime, endTime, reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
+  saveData(); renderAll(); hideModal('modalPaid');
+  syncRecordToGAS(currentUser, date);
+  showToast('📅 有給申請を送信しました（'+startTime+'〜'+endTime+'）');
+}
+
+// ============================================================
+//  休日出勤申請
+// ============================================================
+function toggleCompDate() {
+  const want = document.getElementById('compYes').checked;
+  document.getElementById('compDateSection').style.display = want ? '' : 'none';
+}
+
+function showHolidayModal() {
+  if (!currentUser) return;
+  document.getElementById('holidayWorkDate').value = todayKey();
+  document.getElementById('holidayStartTime').value = '';
+  document.getElementById('holidayEndTime').value = '';
+  document.getElementById('holidayReason').value = '';
+  document.getElementById('compNo').checked = true;
+  document.getElementById('compDateSection').style.display = 'none';
+  document.getElementById('compDate').value = '';
+  document.getElementById('compTime').value = '';
+  document.getElementById('modalHoliday').classList.add('show');
+}
+
+function submitHoliday() {
+  const workDate  = document.getElementById('holidayWorkDate').value;
+  const startTime = document.getElementById('holidayStartTime').value;
+  const endTime   = document.getElementById('holidayEndTime').value;
+  const reason    = document.getElementById('holidayReason').value.trim();
+  const wantComp  = document.getElementById('compYes').checked;
+  const compDate  = document.getElementById('compDate').value;
+  const compTime  = document.getElementById('compTime').value.trim();
+  if (!workDate)  { showToast('出勤日を選択してください'); return; }
+  if (!startTime || !endTime) { showToast('勤務時間を入力してください'); return; }
+  if (startTime >= endTime)   { showToast('終了時刻は開始時刻より後にしてください'); return; }
+  if (!reason)    { showToast('理由を入力してください'); return; }
+  if (wantComp && !compDate) { showToast('振替希望日を入力してください'); return; }
+  const rec = getRecByKey(currentUser, workDate);
+  if (rec.holiday?.status === 'pending')  { showToast('申請中です'); return; }
+  if (rec.holiday?.status === 'approved') { showToast('承認済みです'); return; }
+  rec.holiday = { workDate, startTime, endTime, wantComp, compDate: wantComp?compDate:'', compTime: wantComp?compTime:'', reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
+  saveData(); renderAll(); hideModal('modalHoliday');
+  syncRecordToGAS(currentUser, workDate);
+  showToast('🏢 休日出勤申請を送信しました（'+startTime+'〜'+endTime+'）');
+}
+
+// ============================================================
+//  打刻修正モーダル（管理者のみ）
+// ============================================================
+function showEditModal() {
+  // メンバー一覧をセット
+  const sel = document.getElementById('editMember');
+  sel.innerHTML = '';
+  getUserNames().forEach(n => {
+    const opt = document.createElement('option');
+    opt.value = n; opt.textContent = n;
+    if (n === currentUser) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  // 日付を今日に
+  document.getElementById('editDate').value = todayKey();
+  loadEditPairs();
+  document.getElementById('modalEdit').classList.add('show');
+}
+
+function loadEditDate() { loadEditPairs(); }
+
+function loadEditPairs() {
+  const name = document.getElementById('editMember').value;
+  const dateKey = document.getElementById('editDate').value;
+  if (!name || !dateKey) return;
+  const rec = getRecByKey(name, dateKey);
+  renderEditPairs(rec.pairs || []);
+}
+
+function renderEditPairs(pairs) {
+  const wrap = document.getElementById('editPairsList');
+  wrap.innerHTML = '';
+  if (pairs.length === 0) {
+    wrap.innerHTML = '<div style="font-size:13px;color:var(--subtext);padding:8px 0">記録なし</div>';
+    return;
+  }
+  pairs.forEach((p, i) => {
+    const inVal  = p.in  ? new Date(p.in) .toTimeString().slice(0,5) : '';
+    const outVal = p.out ? new Date(p.out).toTimeString().slice(0,5) : '';
+    const row = document.createElement('div');
+    row.className = 'edit-pair-row';
+    row.dataset.index = i;
+    row.innerHTML = `
+      <span class="ep-num">${i+1}</span>
+      <input type="time" class="ep-in"  value="${inVal}"  placeholder="出勤">
+      <span class="ep-sep">〜</span>
+      <input type="time" class="ep-out" value="${outVal}" placeholder="退勤">
+      <button class="btn-del-pair" onclick="deleteEditPair(${i})" title="削除">✕</button>`;
+    wrap.appendChild(row);
+  });
+}
+
+function addEditPair() {
+  const wrap = document.getElementById('editPairsList');
+  const rows = wrap.querySelectorAll('.edit-pair-row');
+  const idx = rows.length;
+  const row = document.createElement('div');
+  row.className = 'edit-pair-row';
+  row.dataset.index = idx;
+  row.innerHTML = `
+    <span class="ep-num">${idx+1}</span>
+    <input type="time" class="ep-in"  placeholder="出勤">
+    <span class="ep-sep">〜</span>
+    <input type="time" class="ep-out" placeholder="退勤">
+    <button class="btn-del-pair" onclick="deleteEditPair(${idx})" title="削除">✕</button>`;
+  wrap.appendChild(row);
+}
+
+function deleteEditPair(idx) {
+  const name = document.getElementById('editMember').value;
+  const dateKey = document.getElementById('editDate').value;
+  const rec = getRecByKey(name, dateKey);
+  rec.pairs.splice(idx, 1);
+  saveData();
+  renderEditPairs(rec.pairs);
+}
+
+function saveEditTime() {
+  const name = document.getElementById('editMember').value;
+  const dateKey = document.getElementById('editDate').value;
+  if (!name || !dateKey) return;
+  const rec = getRecByKey(name, dateKey);
+  const rows = document.getElementById('editPairsList').querySelectorAll('.edit-pair-row');
+  const newPairs = [];
+  rows.forEach(row => {
+    const inT  = row.querySelector('.ep-in').value;
+    const outT = row.querySelector('.ep-out').value;
+    if (!inT) return; // 出勤時刻がなければスキップ
+    const base = dateKey.replace(/-/g,'/');
+    const inTs  = inT  ? new Date(base+' '+inT).getTime()  : null;
+    const outTs = outT ? new Date(base+' '+outT).getTime() : null;
+    newPairs.push({ in: inTs, out: outTs });
+  });
+  rec.pairs = newPairs;
+  saveData(); renderAll(); hideModal('modalEdit');
+  syncRecordToGAS(name, dateKey);
+  showToast('✅ '+name+'（'+dateKey+'）の打刻を修正しました');
+}
+
+// ============================================================
+//  描画
+// ============================================================
+function renderAll() {
+  renderLoginSection();
+  renderHeaderRole();
+  renderStatus();
+  renderWeekSummary();
+  renderMonthView();
+  renderHistory();
+  renderMemberStatus();
+  renderApprovalTab();
+  renderApprovalList();
+}
+
+function renderHeaderRole() {
+  const el = document.getElementById('headerRole');
+  if (!currentUser) {
+    el.textContent = '---'; el.className = 'header-role';
+    document.getElementById('tab-approval').style.display = 'none';
+    return;
+  }
+  const admin = isAdmin(currentUser);
+  el.textContent = admin ? '🔑 管理者' : '👤 メンバー';
+  el.className = 'header-role' + (admin ? ' admin' : '');
+  document.getElementById('tab-members').style.display  = admin ? '' : 'none';
+  document.getElementById('tab-approval').style.display = admin ? '' : 'none';
+  document.getElementById('adminEditArea').style.display = admin ? '' : 'none';
+}
+
+function renderStatus() {
+  const now = new Date();
+  document.getElementById('todayDate').textContent =
+    now.getFullYear()+'年'+(now.getMonth()+1)+'月'+now.getDate()+'日（'+WEEKDAYS[now.getDay()]+'）';
+
+  // 申請ボタン・ステータスバーの初期化ヘルパー
+  function hideAllAppBars() {
+    ['otStatusBar','earlyStatusBar','paidStatusBar','holidayStatusBar'].forEach(id=>{
+      document.getElementById(id).style.display='none';
+    });
+  }
+  function setAppBtn(id, disabled, text) {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    btn.disabled = disabled;
+    if (text) btn.lastChild.textContent = text;
+  }
+
+  if (!currentUser) {
+    ['clockInFirst','clockOutLast','workDuration','otPlanned'].forEach(id=>document.getElementById(id).textContent='--:--');
+    setStatus('out','未出勤');
+    document.getElementById('btnIn').disabled = false;
+    document.getElementById('btnOut').disabled = true;
+    document.getElementById('btnOt').disabled = true;
+    document.getElementById('pairsList').style.display = 'none';
+    hideAllAppBars();
+    return;
+  }
+
+  const rec = getTodayRec();
+  const pairs = rec.pairs || [];
+  const working = isCurrentlyWorking(rec);
+  const hasPairs = pairs.length > 0;
+  const totalMin = totalMinForRec(rec, true);
+
+  // 最初の出勤・最後の退勤
+  const firstIn  = hasPairs ? pairs[0].in : null;
+  const lastPair = hasPairs ? pairs[pairs.length-1] : null;
+  const lastOut  = lastPair?.out || null;
+
+  document.getElementById('clockInFirst').textContent  = fmtTime(firstIn);
+  document.getElementById('clockOutLast').textContent  = fmtTime(lastOut);
+  document.getElementById('workDuration').textContent  = hasPairs ? fmtMin(totalMin) : '--:--';
+
+  if (!hasPairs) {
+    setStatus('out','未出勤');
+    document.getElementById('btnIn').disabled  = false;
+    document.getElementById('btnOut').disabled = true;
+    document.getElementById('btnOt').disabled  = true;
+  } else if (working) {
+    setStatus('in','勤務中');
+    document.getElementById('btnIn').disabled  = true;
+    document.getElementById('btnOut').disabled = false;
+    const otSt = rec.ot?.status;
+    document.getElementById('btnOt').disabled  = (otSt==='pending'||otSt==='approved');
+    document.getElementById('btnOt').textContent =
+      otSt==='pending'?'🕐 申請中…':otSt==='approved'?'✅ 残業承認済み':'🕐 残業申請';
+  } else {
+    setStatus('out','退勤済み');
+    document.getElementById('btnIn').disabled  = false;  // 再出勤可能
+    document.getElementById('btnOut').disabled = true;
+    document.getElementById('btnOt').disabled  = rec.ot?.status==='pending'||rec.ot?.status==='approved';
+    document.getElementById('btnOt').textContent =
+      rec.ot?.status==='pending'?'🕐 申請中…':rec.ot?.status==='approved'?'✅ 残業承認済み':'🕐 残業申請';
+  }
+
+  // 残業予定
+  document.getElementById('otPlanned').textContent = rec.ot ? rec.ot.plannedEnd : '--:--';
+
+  // 打刻ペア一覧
+  const pl = document.getElementById('pairsList');
+  if (pairs.length > 1 || (pairs.length===1 && pairs[0].out)) {
+    pl.style.display = '';
+    pl.innerHTML = '';
+    pairs.forEach((p,i) => {
+      const dur = p.in&&p.out ? fmtMin(Math.floor((p.out-p.in)/60000)) : (p.in&&!p.out?'勤務中':'');
+      const row = document.createElement('div');
+      row.className = 'pair-row';
+      row.innerHTML = `<span class="pair-num">${i+1}</span><span class="pair-times">${fmtTime(p.in)} 〜 ${fmtTime(p.out)}</span><span class="pair-dur">${dur}</span>`;
+      pl.appendChild(row);
+    });
+  } else {
+    pl.style.display = 'none';
+  }
+
+  // ── 各種申請ステータスバー ──
+  function renderAppBar(barId, app, typeInfo, detailText) {
+    const bar = document.getElementById(barId);
+    if (!app) { bar.style.display='none'; return; }
+    const icons  = {pending:'⏳',approved:'✅',rejected:'🚫'};
+    const labels = {pending:'承認待ち',approved:'承認済み',rejected:'却下'};
+    let txt = icons[app.status]+' '+typeInfo.label+' '+labels[app.status]+' ／ '+detailText;
+    if (app.status==='rejected'&&app.comment) txt += '（'+app.comment+'）';
+    bar.className = 'ot-status-bar '+typeInfo.barClass;
+    bar.innerHTML = txt; bar.style.display = '';
+  }
+  const otType      = APP_TYPES.find(t=>t.key==='ot');
+  const earlyType   = APP_TYPES.find(t=>t.key==='early');
+  const paidType    = APP_TYPES.find(t=>t.key==='paid');
+  const holidayType = APP_TYPES.find(t=>t.key==='holiday');
+  renderAppBar('otStatusBar',      rec.ot,      otType,      rec.ot      ? rec.ot.plannedEnd+'まで'          : '');
+  renderAppBar('earlyStatusBar',   rec.early,   earlyType,   rec.early   ? rec.early.startTime+'〜8:00'      : '');
+  renderAppBar('paidStatusBar',    rec.paid,    paidType,    rec.paid    ? rec.paid.startTime+'〜'+rec.paid.endTime : '');
+  renderAppBar('holidayStatusBar', rec.holiday, holidayType, rec.holiday ? rec.holiday.workDate+(rec.holiday.wantComp?'（振替希望）':'（振替なし）') : '');
+}
+
+function setStatus(type,text){
+  document.getElementById('statusBadge').className='status-badge '+type;
+  document.getElementById('statusText').textContent=text;
+}
+
+function renderWeekSummary() {
+  const grid = document.getElementById('weekGrid');
+  grid.innerHTML = '';
+  const now = new Date();
+  const dow = now.getDay();
+  const mon = new Date(now); mon.setDate(now.getDate()-dow);
+  const recs = getUserRecords();
+  let maxMin=0;
+  const days=[];
+  for(let i=0;i<7;i++){
+    const d=new Date(mon); d.setDate(mon.getDate()+i);
+    const key=toDateKey(d);
+    const rawRec=recs[key];
+    const rec=rawRec?migrateRec(rawRec):null;
+    const min=rec?totalMinForRec(rec,i===dow):0;
+    if(min>maxMin)maxMin=min;
+    days.push({d,min,isToday:i===dow});
+  }
+  if(maxMin===0)maxMin=480;
+  days.forEach(({d,min,isToday})=>{
+    const pct=Math.min(100,Math.round(min/maxMin*100));
+    const col=document.createElement('div');
+    col.innerHTML=`<div class="week-day">${WEEKDAYS[d.getDay()]}</div><div class="week-bar-wrap"><div class="week-bar ${isToday?'today':min>0?'has-data':''}" style="height:${pct}%"></div></div><div class="week-hours">${min>0?fmtMin(min):'-'}</div>`;
+    grid.appendChild(col);
+  });
+}
+
+function renderMonthView() {
+  const now=new Date();
+  const year=now.getFullYear(),month=now.getMonth();
+  document.getElementById('monthTitle').textContent=year+'年'+(month+1)+'月';
+  const recs=getUserRecords();
+  let days=0,totalMin=0,otCount=0;
+  Object.keys(recs).forEach(key=>{
+    const d=new Date(key.replace(/-/g,'/'));
+    if(d.getFullYear()!==year||d.getMonth()!==month)return;
+    const rec=migrateRec(recs[key]);
+    const isToday=key===todayKey();
+    const min=totalMinForRec(rec,isToday);
+    if(min>0){days++;totalMin+=min;}
+    if(rec.ot&&(rec.ot.status==='approved'||rec.ot.status==='pending'))otCount++;
+  });
+  document.getElementById('statDays').textContent=days+' 日';
+  document.getElementById('statTotal').textContent=fmtMin(totalMin);
+  document.getElementById('statAvg').textContent=days?fmtMin(Math.round(totalMin/days)):'0:00';
+  document.getElementById('statOt').textContent=otCount+' 回';
+}
+
+function renderHistory() {
+  const recs=getUserRecords();
+  const keys=Object.keys(recs).sort().reverse();
+  const list=document.getElementById('historyList');
+  list.innerHTML='';
+  if(keys.length===0){list.innerHTML='<div class="empty-state">📭 まだ記録がありません</div>';return;}
+  keys.slice(0,30).forEach(key=>{
+    const rec=migrateRec(recs[key]);
+    const d=new Date(key.replace(/-/g,'/'));
+    const isToday=key===todayKey();
+    const pairs=rec.pairs||[];
+    const totalMin=totalMinForRec(rec,isToday);
+    const working=isCurrentlyWorking(rec);
+    let statusHtml='',timesHtml='',durHtml='',otHtml='';
+    if(pairs.length===0){
+      statusHtml='<span class="record-status absent">欠勤</span>';
+      timesHtml='-- : --';
+    } else if(working){
+      statusHtml='<span class="record-status working">勤務中</span>';
+      if(pairs.length===1){
+        timesHtml=fmtTime(pairs[0].in)+' 〜 勤務中';
+      } else {
+        timesHtml=pairs.map((p,i)=>`<span style="color:var(--subtext);font-size:11px;">${i+1}.</span> ${fmtTime(p.in)} 〜 ${p.out?fmtTime(p.out):'<span style="color:var(--primary-dark)">勤務中</span>'}`).join('<br>');
+      }
+      durHtml=fmtMin(totalMin)+'（進行中）';
+    } else {
+      statusHtml='<span class="record-status complete">完了</span>';
+      if(pairs.length===1){
+        timesHtml=fmtTime(pairs[0].in)+' 〜 '+fmtTime(pairs[0].out);
+        durHtml=fmtMin(totalMin);
+      } else {
+        timesHtml=pairs.map((p,i)=>`<span style="color:var(--subtext);font-size:11px;">${i+1}.</span> ${fmtTime(p.in)} 〜 ${fmtTime(p.out)}`).join('<br>');
+        durHtml=fmtMin(totalMin)+'（合計）';
+      }
+    }
+    const stLabels={pending:'審査中',approved:'承認済',rejected:'却下'};
+    APP_TYPES.forEach(t=>{
+      const app=rec[t.key];
+      if(!app) return;
+      let detail='';
+      if(t.key==='ot')      detail=app.plannedEnd+'まで';
+      else if(t.key==='early')   detail=app.startTime+'〜8:00';
+      else if(t.key==='paid')    detail=app.startTime+'〜'+app.endTime;
+      else if(t.key==='holiday') detail=app.workDate+' '+(app.startTime||'')+'〜'+(app.endTime||'')+(app.wantComp?'（振替）':'');
+      otHtml+=`<span class="ot-tag ${app.status}" style="margin-right:4px;">${t.icon}${t.label} ${detail} ${stLabels[app.status]}</span>`;
+    });
+    if(otHtml) otHtml=`<div style="margin-top:3px;">${otHtml}</div>`;
+    const item=document.createElement('div');
+    item.className='record-item';
+    item.innerHTML=`
+      <div class="record-date"><div class="d">${d.getMonth()+1}/${d.getDate()}</div><div class="wd">${WEEKDAYS[d.getDay()]}曜</div></div>
+      <div class="record-times">
+        <div class="times">${timesHtml}</div>
+        ${durHtml?`<div class="duration">${durHtml}</div>`:''}
+        ${otHtml}
+      </div>
+      ${statusHtml}`;
+    list.appendChild(item);
+  });
+}
+
+// ============================================================
+//  メンバー状況（管理者のみ）
+// ============================================================
+function renderMemberStatus() {
+  if (!currentUser || !isAdmin(currentUser)) return;
+  const today = todayKey();
+  const names = getUserNames();
+
+  let cntWorking=0, cntDone=0, cntAbsent=0;
+  const rows = names.map(name => {
+    const recs = getUserRecords(name);
+    const rec  = migrateRec(recs[today]);
+    const pairs = rec.pairs || [];
+    const working = isCurrentlyWorking(rec);
+    const hasPairs = pairs.length > 0;
+    const totalMin = totalMinForRec(rec, working);
+    const firstIn  = hasPairs ? pairs[0].in : null;
+    const lastOut  = (hasPairs && !working) ? pairs[pairs.length-1].out : null;
+
+    let state, icon;
+    if (working)       { state='working'; icon='🟢'; cntWorking++; }
+    else if (hasPairs) { state='done';    icon='🔵'; cntDone++; }
+    else               { state='absent';  icon='⚪'; cntAbsent++; }
+
+    return { name, state, icon, firstIn, lastOut, totalMin, working, pairs };
+  });
+
+  // サマリー
+  const sumEl = document.getElementById('msSummaryRow');
+  sumEl.innerHTML = `
+    <div class="ms-summary-item working"><div class="ss-val">${cntWorking}</div><div class="ss-lbl">🟢 勤務中</div></div>
+    <div class="ms-summary-item done"><div class="ss-val">${cntDone}</div><div class="ss-lbl">🔵 退勤済み</div></div>
+    <div class="ms-summary-item absent"><div class="ss-val">${cntAbsent}</div><div class="ss-lbl">⚪ 未出勤</div></div>`;
+
+  // 一覧（勤務中→退勤済み→未出勤の順）
+  const order = {working:0, done:1, absent:2};
+  rows.sort((a,b) => order[a.state]-order[b.state] || a.name.localeCompare(b.name,'ja'));
+
+  const grid = document.getElementById('memberStatusGrid');
+  grid.innerHTML = '';
+  rows.forEach(r => {
+    let timeTxt;
+    if (r.pairs.length === 0) {
+      timeTxt = '---';
+    } else if (r.pairs.length === 1) {
+      const p = r.pairs[0];
+      timeTxt = fmtTime(p.in) + ' 〜 ' + (p.out ? fmtTime(p.out) : '勤務中');
+    } else {
+      // 途中退出あり：全ペアを表示
+      timeTxt = r.pairs.map((p, i) =>
+        `<span style="font-size:10px;color:var(--subtext);">${i+1}.</span> ${fmtTime(p.in)}〜${p.out ? fmtTime(p.out) : '<b style="color:var(--primary-dark)">勤務中</b>'}`
+      ).join('<br>');
+    }
+    const durTxt = r.totalMin > 0 ? fmtMin(r.totalMin) + (r.working ? ' (進行中)' : '') : '';
+    const item = document.createElement('div');
+    item.className = 'ms-item';
+    const labels = {working:'勤務中', done:'退勤済み', absent:'未出勤'};
+    item.innerHTML = `
+      <div class="ms-avatar ${r.state}">${r.icon}</div>
+      <div class="ms-info">
+        <div class="ms-name">${r.name}</div>
+        <div class="ms-times">${timeTxt}</div>
+      </div>
+      <div class="ms-right">
+        <div class="ms-badge ${r.state}">${labels[r.state]}</div>
+        ${durTxt ? `<div class="ms-dur">${durTxt}</div>` : ''}
+      </div>`;
+    grid.appendChild(item);
+  });
+}
+
+function renderApprovalTab() {
+  if(!currentUser||!isAdmin(currentUser))return;
+  let count=0;
+  getUserNames().forEach(name=>{
+    Object.values(getUserRecords(name)).forEach(r=>{
+      const rec=migrateRec(r);
+      APP_TYPES.forEach(t=>{ if(rec[t.key]?.status==='pending') count++; });
+    });
+  });
+  const badge=document.getElementById('approvalBadge');
+  badge.textContent=count; badge.style.display=count>0?'':'none';
+}
+
+function renderApprovalList() {
+  if(!currentUser||!isAdmin(currentUser))return;
+  const list=document.getElementById('approvalList');
+  list.innerHTML='';
+  const items=[];
+  getUserNames().forEach(name=>{
+    Object.entries(getUserRecords(name)).forEach(([dateKey,r])=>{
+      const rec=migrateRec(r);
+      APP_TYPES.forEach(t=>{
+        if(rec[t.key]?.status==='pending') items.push({name,dateKey,rec,type:t.key,typeInfo:t});
+      });
+    });
+  });
+  items.sort((a,b)=>b.dateKey.localeCompare(a.dateKey));
+  if(items.length===0){list.innerHTML='<div class="empty-state">📭 承認待ちの申請はありません</div>';return;}
+
+  items.forEach(({name,dateKey,rec,type,typeInfo})=>{
+    const app=rec[type];
+    const d=new Date(dateKey.replace(/-/g,'/'));
+    const dateStr=(d.getMonth()+1)+'/'+d.getDate()+'（'+WEEKDAYS[d.getDay()]+'）';
+
+    // 申請内容テキスト
+    let detailHtml='';
+    if(type==='ot')      detailHtml=`${typeInfo.icon} 残業予定 <strong>${app.plannedEnd}</strong>まで`;
+    else if(type==='early')   detailHtml=`${typeInfo.icon} 早出 <strong>${app.startTime}〜8:00</strong>`;
+    else if(type==='paid')    detailHtml=`${typeInfo.icon} 有給 <strong>${app.startTime}〜${app.endTime}</strong>`;
+    else if(type==='holiday') detailHtml=`${typeInfo.icon} 休日出勤 <strong>${app.workDate}</strong> ${app.startTime||''}〜${app.endTime||''} ${app.wantComp?` 振替希望：${app.compDate}${app.compTime?' '+app.compTime:''}`:'（振替なし）'}`;
+
+    const isSelf = name === currentUser;
+    const actionHtml = isSelf
+      ? `<div class="approval-done" style="background:#F2F2F7;color:var(--subtext);">⏳ 他の管理者の承認待ちです</div>`
+      : `<div class="approval-buttons">
+          <button class="btn-approve" onclick="approveApplication('${name}','${dateKey}','${type}')">✅ 承認</button>
+          <button class="btn-reject"  onclick="showRejectModal('${name}','${dateKey}','${type}')">🚫 却下</button>
+        </div>`;
+
+    const item=document.createElement('div');
+    item.className='approval-item';
+    item.innerHTML=`
+      <div class="approval-header">
+        <span class="approval-name">👤 ${name}</span>
+        <span class="approval-date">${dateStr} <span style="font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px;background:#F2F2F7;">${typeInfo.label}</span></span>
+      </div>
+      <div class="approval-detail">${detailHtml}</div>
+      <div class="approval-reason">📝 ${app.reason||'（理由なし）'}</div>
+      ${actionHtml}`;
+    list.appendChild(item);
+  });
+}
+
+function switchTab(tab) {
+  ['month','history','members','approval'].forEach(t=>{
+    document.getElementById('view-'+t).style.display=t===tab?'':'none';
+    const btn=document.getElementById('tab-'+t);
+    if(btn)btn.className='tab'+(t===tab?(' active'+((t==='approval'||t==='members')?' admin-tab':'')):'');
+  });
+  // メンバー状況・承認管理タブを開いた時はGASから最新データを取得
+  if (tab === 'members') {
+    const notice = document.getElementById('gasNoticeBar');
+    if (notice) notice.style.display = gasUrl ? 'none' : '';
+    if (gasUrl) fetchAllFromGAS();
+  }
+  if (tab === 'approval' && gasUrl) {
+    fetchAllFromGAS();
+  }
+}
+
+// ============================================================
+//  退勤リマインダー通知
+// ============================================================
+const REMINDER_KEY = 'kintai_reminder_shown'; // 今日通知済みかどうか
+
+// ブラウザ通知の許可をリクエスト（ログイン時に呼ぶ）
+function requestNotifPermission() {
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+}
+
+// リマインダーを閉じる（今日はもう表示しない）
+function dismissReminder() {
+  document.getElementById('reminderBanner').classList.remove('show');
+  localStorage.setItem(REMINDER_KEY, todayKey());
+}
+
+// リマインダー条件チェック
+function checkOvertimeReminder() {
+  // 管理者・未ログインは対象外
+  if (!currentUser || isAdmin(currentUser)) {
+    document.getElementById('reminderBanner').classList.remove('show');
+    return;
+  }
+
+  const now = new Date();
+  const totalMin = now.getHours() * 60 + now.getMinutes();
+
+  // 17:15（1035分）を過ぎていない → バナーを消す
+  if (totalMin < 17 * 60 + 15) {
+    document.getElementById('reminderBanner').classList.remove('show');
+    return;
+  }
+
+  const rec = getTodayRec();
+  const working = isCurrentlyWorking(rec);
+  const hasOT = rec.ot && (rec.ot.status === 'pending' || rec.ot.status === 'approved');
+
+  // 勤務中かつ残業申請なし → 通知対象
+  if (working && !hasOT) {
+    // アプリ内バナーを表示
+    document.getElementById('reminderBanner').classList.add('show');
+
+    // ブラウザ通知（今日まだ出していない場合）
+    const shownDate = localStorage.getItem(REMINDER_KEY);
+    if (shownDate !== todayKey()) {
+      localStorage.setItem(REMINDER_KEY, todayKey());
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('⏰ 退勤のお知らせ', {
+          body: '17:15を過ぎました。退勤ボタンを押すか、残業申請をお願いします。',
+          tag: 'kintai-reminder' // 同じタグは重複して表示しない
+        });
+      }
+    }
+  } else {
+    // 退勤済み or 残業申請済みならバナーを消す
+    document.getElementById('reminderBanner').classList.remove('show');
+  }
+}
+
+// ============================================================
+//  CSV エクスポート
+// ============================================================
+function exportCSV() {
+  if(!currentUser){showToast('ログインしてください');return;}
+  const recs=getUserRecords();
+  const keys=Object.keys(recs).sort();
+  if(keys.length===0){showToast('エクスポートするデータがありません');return;}
+  let csv='﻿名前,日付,出勤時刻,退勤時刻,勤務時間(分),打刻回数,残業申請,残業予定終了,残業理由,承認状況\n';
+  keys.forEach(key=>{
+    const rec=migrateRec(recs[key]);
+    const pairs=rec.pairs||[];
+    const totalMin=totalMinForRec(rec,false);
+    const firstIn=pairs[0]?.in||null;
+    const lastOut=pairs[pairs.length-1]?.out||null;
+    const ot=rec.ot||{};
+    csv+=[currentUser,key,fmtTime(firstIn),fmtTime(lastOut),totalMin||'',pairs.length,
+      ot.plannedEnd?'有':'無',ot.plannedEnd||'',ot.reason||'',ot.status||''].join(',')+'\n';
+  });
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`kintai_${currentUser}_${todayKey()}.csv`;
+  a.click();
+  showToast('📥 CSVをダウンロードしました');
+}
+
+// ============================================================
+//  初期化
+// ============================================================
+// セッション復元
+const savedSession = loadSession();
+if (savedSession && getUserNames().includes(savedSession)) {
+  currentUser = savedSession;
+}
+
+renderAll();
+updateSyncIndicator('idle');
+
+// 管理者でセッション復元された場合もGASから最新データを取得
+if (currentUser && isAdmin(currentUser) && gasUrl) fetchAllFromGAS();
+
+setInterval(()=>{
+  if (!currentUser) return;
+  if (isAdmin(currentUser)) {
+    renderAll();
+    if (gasUrl) fetchAllFromGAS(); // 管理者は常にGASから最新状態を取得
+    return;
+  }
+  const rec = getTodayRec();
+  if (isCurrentlyWorking(rec)) renderAll();
+  // 一般メンバーも残業申請の承認状況をGASから取得
+  if (gasUrl) fetchAllFromGAS();
+  checkOvertimeReminder(); // 退勤リマインダーチェック
+}, 30000); // 30秒ごと
+</script>
+</body>
+</html>

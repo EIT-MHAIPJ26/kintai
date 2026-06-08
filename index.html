@@ -263,6 +263,20 @@
     .btn-add-pair{width:100%;padding:9px;border:1.5px dashed var(--border);border-radius:10px;background:white;color:var(--subtext);font-size:13px;cursor:pointer;margin-top:4px;}
     .btn-add-pair:hover{border-color:var(--blue);color:var(--blue);}
 
+    /* 申請状況リスト */
+    .myapp-item{padding:11px 0;border-bottom:1px solid var(--border);}
+    .myapp-item:last-child{border-bottom:none;}
+    .myapp-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;}
+    .myapp-type{font-size:13px;font-weight:700;display:flex;align-items:center;gap:5px;}
+    .myapp-date{font-size:12px;color:var(--subtext);}
+    .myapp-detail{font-size:13px;margin-bottom:4px;}
+    .myapp-reason{font-size:12px;color:var(--subtext);background:#F8F8F8;padding:5px 9px;border-radius:7px;margin-bottom:5px;}
+    .myapp-status{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;padding:3px 10px;border-radius:8px;}
+    .myapp-status.pending{background:#FFF8E1;color:#B8860B;}
+    .myapp-status.approved{background:#E8F9EF;color:var(--primary-dark);}
+    .myapp-status.rejected{background:#FFF0F0;color:var(--danger);}
+    .myapp-approver{font-size:11px;color:var(--subtext);margin-left:6px;}
+
     /* 退勤リマインダーバナー */
     .reminder-banner{
       position:fixed;bottom:0;left:0;right:0;z-index:250;
@@ -351,6 +365,8 @@
     <div id="earlyStatusBar" style="display:none"></div>
     <div id="paidStatusBar" style="display:none"></div>
     <div id="holidayStatusBar" style="display:none"></div>
+    <!-- 今日以降の申請一覧 -->
+    <div id="upcomingApps" style="display:none;margin-top:10px;border-top:1px solid var(--border);padding-top:10px;"></div>
     <!-- 管理者：打刻修正ボタン -->
     <div id="adminEditArea" style="display:none;margin-top:12px;gap:8px;flex-wrap:wrap;">
       <button class="btn-edit-time" onclick="showEditModal()">✏️ 打刻を修正する</button>
@@ -393,6 +409,9 @@
   <div class="tabs">
     <button class="tab active" id="tab-month" onclick="switchTab('month')">今月</button>
     <button class="tab" id="tab-history" onclick="switchTab('history')">履歴</button>
+    <button class="tab" id="tab-myapps" onclick="switchTab('myapps')" style="display:none">
+      申請状況<span class="badge" id="myappsBadge" style="display:none"></span>
+    </button>
     <button class="tab" id="tab-members" onclick="switchTab('members')" style="display:none">メンバー状況</button>
     <button class="tab" id="tab-approval" onclick="switchTab('approval')" style="display:none">
       承認管理<span class="badge" id="approvalBadge" style="display:none"></span>
@@ -417,6 +436,14 @@
     <div class="records-card">
       <div class="card-title">📋 勤務履歴</div>
       <div id="historyList"></div>
+    </div>
+  </div>
+
+  <!-- 申請状況（全メンバー） -->
+  <div id="view-myapps" style="display:none">
+    <div class="records-card">
+      <div class="card-title">📋 申請状況</div>
+      <div id="myAppsList"></div>
     </div>
   </div>
 
@@ -1629,6 +1656,7 @@ function renderAll() {
   renderWeekSummary();
   renderMonthView();
   renderHistory();
+  renderMyApplications();
   renderMemberStatus();
   renderApprovalTab();
   renderApprovalList();
@@ -1644,6 +1672,7 @@ function renderHeaderRole() {
   const admin = isAdmin(currentUser);
   el.textContent = admin ? '🔑 管理者' : '👤 メンバー';
   el.className = 'header-role' + (admin ? ' admin' : '');
+  document.getElementById('tab-myapps').style.display   = currentUser ? '' : 'none';
   document.getElementById('tab-members').style.display  = admin ? '' : 'none';
   document.getElementById('tab-approval').style.display = admin ? '' : 'none';
   const editArea = document.getElementById('adminEditArea');
@@ -1771,6 +1800,65 @@ function renderStatus() {
   renderAppBar('earlyStatusBar',   rec.early,   earlyType,   rec.early   ? rec.early.startTime+'〜8:00'      : '');
   renderAppBar('paidStatusBar',    rec.paid,    paidType,    rec.paid    ? rec.paid.startTime+'〜'+rec.paid.endTime : '');
   renderAppBar('holidayStatusBar', rec.holiday, holidayType, rec.holiday ? rec.holiday.workDate+(rec.holiday.wantComp?'（振替希望）':'（振替なし）') : '');
+
+  // ── 今日以降の申請をすべて表示 ──
+  renderUpcomingApps();
+}
+
+function renderUpcomingApps() {
+  const upEl = document.getElementById('upcomingApps');
+  if (!currentUser) { upEl.style.display='none'; return; }
+
+  const today = todayKey();
+  const recs  = getUserRecords();
+  const items = [];
+
+  Object.entries(recs).forEach(([dateKey, r]) => {
+    const rec = migrateRec(r);
+    APP_TYPES.forEach(t => {
+      const app = rec[t.key];
+      if (!app || app.status === 'rejected') return;
+      // 対象日（holidayはworkDate、それ以外はdateKey）
+      const targetDate = (t.key === 'holiday' && app.workDate) ? app.workDate : dateKey;
+      // 今日より前は非表示
+      if (targetDate < today) return;
+      // 今日分は既存ステータスバーで表示済みなのでスキップ
+      if (dateKey === today) return;
+
+      let detail = '';
+      if (t.key==='ot')           detail = app.plannedEnd+'まで';
+      else if (t.key==='early')   detail = app.startTime+'〜8:00';
+      else if (t.key==='paid')    detail = app.startTime+'〜'+app.endTime;
+      else if (t.key==='holiday') detail = (app.startTime||'')+'〜'+(app.endTime||'');
+
+      items.push({ targetDate, typeInfo:t, app, detail });
+    });
+  });
+
+  items.sort((a,b) => a.targetDate.localeCompare(b.targetDate));
+
+  if (items.length === 0) { upEl.style.display='none'; return; }
+
+  const stIcons  = { pending:'⏳', approved:'✅' };
+  const stLabels = { pending:'承認待ち', approved:'承認済み' };
+  const stColors = { pending:'#B8860B', approved:'var(--primary-dark)' };
+  const stBgs    = { pending:'#FFF8E1', approved:'#E8F9EF' };
+
+  upEl.style.display = '';
+  upEl.innerHTML = '<div style="font-size:12px;font-weight:700;color:var(--subtext);margin-bottom:7px;">📋 申請中・承認済みの予定</div>';
+
+  items.forEach(({ targetDate, typeInfo, app, detail }) => {
+    const d = new Date(targetDate.replace(/-/g,'/'));
+    const dateStr = (d.getMonth()+1)+'/'+d.getDate()+'（'+WEEKDAYS[d.getDay()]+'）';
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:7px;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px;flex-wrap:wrap;';
+    row.innerHTML = `
+      <span style="font-weight:700;color:${typeInfo.color};white-space:nowrap;">${typeInfo.icon} ${typeInfo.label}</span>
+      <span style="color:var(--subtext);white-space:nowrap;">${dateStr}</span>
+      <span style="flex:1;color:var(--text);">${detail}</span>
+      <span style="padding:2px 8px;border-radius:6px;font-weight:700;white-space:nowrap;background:${stBgs[app.status]};color:${stColors[app.status]};">${stIcons[app.status]} ${stLabels[app.status]}</span>`;
+    upEl.appendChild(row);
+  });
 }
 
 function setStatus(type,text){
@@ -1890,6 +1978,75 @@ function renderHistory() {
 // ============================================================
 //  メンバー状況（管理者のみ）
 // ============================================================
+// ============================================================
+//  申請状況タブ（全メンバー向け）
+// ============================================================
+function renderMyApplications() {
+  if (!currentUser) return;
+  const recs  = getUserRecords();
+  const items = [];
+
+  Object.entries(recs).forEach(([dateKey, r]) => {
+    const rec = migrateRec(r);
+    const d   = new Date(dateKey.replace(/-/g, '/'));
+    const dateStr = (d.getMonth()+1)+'/'+d.getDate()+'（'+WEEKDAYS[d.getDay()]+'）';
+
+    APP_TYPES.forEach(t => {
+      const app = rec[t.key];
+      if (!app) return;
+      let detail = '';
+      if (t.key==='ot')      detail = '残業予定 '+app.plannedEnd+'まで';
+      else if (t.key==='early')   detail = '早出 '+app.startTime+'〜8:00';
+      else if (t.key==='paid')    detail = '有給 '+app.startTime+'〜'+app.endTime;
+      else if (t.key==='holiday') detail = '休日出勤 '+app.workDate+' '+(app.startTime||'')+'〜'+(app.endTime||'')+(app.wantComp?' 振替希望':'');
+      items.push({ dateKey, dateStr, type:t.key, typeInfo:t, app, detail });
+    });
+  });
+
+  // 承認待ちを先に、日付の新しい順
+  const ord = { pending:0, approved:1, rejected:2 };
+  items.sort((a,b) => ord[a.app.status]-ord[b.app.status] || b.dateKey.localeCompare(a.dateKey));
+
+  // バッジ（承認待ち件数）
+  const pendingCount = items.filter(i=>i.app.status==='pending').length;
+  const badge = document.getElementById('myappsBadge');
+  badge.textContent = pendingCount;
+  badge.style.display = pendingCount > 0 ? '' : 'none';
+
+  const list = document.getElementById('myAppsList');
+  list.innerHTML = '';
+  if (items.length === 0) {
+    list.innerHTML = '<div class="empty-state">📭 申請履歴がありません</div>';
+    return;
+  }
+
+  const stIcons  = { pending:'⏳', approved:'✅', rejected:'🚫' };
+  const stLabels = { pending:'承認待ち', approved:'承認済み', rejected:'却下' };
+
+  items.forEach(({ dateStr, typeInfo, app, detail }) => {
+    const approverTxt = app.approvedBy
+      ? `<span class="myapp-approver">（${app.approvedBy}）</span>` : '';
+    const commentTxt = app.status==='rejected' && app.comment
+      ? `<div class="myapp-reason">💬 ${app.comment}</div>` : '';
+
+    const item = document.createElement('div');
+    item.className = 'myapp-item';
+    item.innerHTML = `
+      <div class="myapp-header">
+        <span class="myapp-type" style="color:${typeInfo.color}">${typeInfo.icon} ${typeInfo.label}</span>
+        <span class="myapp-date">${dateStr}</span>
+      </div>
+      <div class="myapp-detail">${detail}</div>
+      ${app.reason ? `<div class="myapp-reason">📝 ${app.reason}</div>` : ''}
+      ${commentTxt}
+      <div>
+        <span class="myapp-status ${app.status}">${stIcons[app.status]} ${stLabels[app.status]}</span>
+        ${approverTxt}
+      </div>`;
+    list.appendChild(item);
+  });
+}
+
 function renderMemberStatus() {
   if (!currentUser || !isAdmin(currentUser)) return;
   const today = todayKey();
@@ -2022,7 +2179,7 @@ function renderApprovalList() {
 }
 
 function switchTab(tab) {
-  ['month','history','members','approval'].forEach(t=>{
+  ['month','history','myapps','members','approval'].forEach(t=>{
     document.getElementById('view-'+t).style.display=t===tab?'':'none';
     const btn=document.getElementById('tab-'+t);
     if(btn)btn.className='tab'+(t===tab?(' active'+((t==='approval'||t==='members')?' admin-tab':'')):'');

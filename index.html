@@ -389,7 +389,7 @@
       <span class="icon">🌅</span>早出申請
     </button>
     <button class="btn-apply btn-ot-g" id="btnOt" onclick="showOtModal()" disabled>
-      <span class="icon">🕐</span>残業申請
+      <span class="icon">🕐</span><span id="btnOtText">残業申請</span>
     </button>
     <button class="btn-apply btn-paid" id="btnPaid" onclick="showPaidModal()">
       <span class="icon">📅</span>有給申請
@@ -1734,8 +1734,8 @@ function renderStatus() {
     document.getElementById('btnOut').disabled = false;
     const otSt = rec.ot?.status;
     document.getElementById('btnOt').disabled  = (otSt==='pending'||otSt==='approved');
-    document.getElementById('btnOt').textContent =
-      otSt==='pending'?'🕐 申請中…':otSt==='approved'?'✅ 残業承認済み':'🕐 残業申請';
+    document.getElementById('btnOtText').textContent =
+      otSt==='pending'?'申請中…':otSt==='approved'?'残業承認済み':'残業申請';
   } else {
     setStatus('out','退勤済み');
     document.getElementById('btnIn').disabled  = false;  // 再出勤可能

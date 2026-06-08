@@ -352,8 +352,9 @@
     <div id="paidStatusBar" style="display:none"></div>
     <div id="holidayStatusBar" style="display:none"></div>
     <!-- 管理者：打刻修正ボタン -->
-    <div id="adminEditArea" style="display:none;margin-top:12px;">
+    <div id="adminEditArea" style="display:none;margin-top:12px;gap:8px;flex-wrap:wrap;">
       <button class="btn-edit-time" onclick="showEditModal()">✏️ 打刻を修正する</button>
+      <button class="btn-edit-time" onclick="showEditAppModal()" style="border-color:var(--purple);color:var(--purple);">✏️ 申請時間を修正する</button>
     </div>
   </div>
 
@@ -595,6 +596,22 @@
     <div class="modal-buttons">
       <button class="btn-cancel" onclick="hideModal('modalEdit')">キャンセル</button>
       <button class="btn-confirm blue" onclick="saveEditTime()">保存する</button>
+    </div>
+  </div>
+</div>
+
+<!-- 申請時間修正モーダル（管理者のみ） -->
+<div class="modal-overlay" id="modalEditApp" onclick="closeModalBg(event,'modalEditApp')">
+  <div class="modal">
+    <h3>✏️ 申請時間修正</h3>
+    <label>メンバー</label>
+    <select id="editAppMember" onchange="loadEditAppData()"></select>
+    <label>日付</label>
+    <input type="date" id="editAppDate" onchange="loadEditAppData()"/>
+    <div id="editAppForm" style="margin-top:4px;"></div>
+    <div class="modal-buttons">
+      <button class="btn-cancel" onclick="hideModal('modalEditApp')">キャンセル</button>
+      <button class="btn-confirm blue" onclick="saveEditApp()">保存する</button>
     </div>
   </div>
 </div>
@@ -1206,6 +1223,17 @@ function submitOt() {
   showToast('📋 残業申請を送信しました（'+plannedEnd+'まで）');
 }
 
+function cancelOt() {
+  if (!currentUser) return;
+  const rec = getTodayRec();
+  if (!rec.ot || rec.ot.status === 'rejected') { showToast('取り消しできる申請がありません'); return; }
+  if (!confirm('残業申請を取り消しますか？')) return;
+  rec.ot = null;
+  saveData(); renderAll();
+  syncRecordToGAS(currentUser, todayKey());
+  showToast('🗑️ 残業申請を取り消しました');
+}
+
 function approveOt(userName, dateKey) {
   const rec = getRecByKey(userName, dateKey);
   if (!rec?.ot) return;
@@ -1476,6 +1504,122 @@ function saveEditTime() {
 }
 
 // ============================================================
+//  申請時間修正モーダル（管理者のみ）
+// ============================================================
+function showEditAppModal() {
+  const sel = document.getElementById('editAppMember');
+  sel.innerHTML = '';
+  getUserNames().forEach(n => {
+    const opt = document.createElement('option');
+    opt.value = n; opt.textContent = n;
+    if (n === currentUser) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  document.getElementById('editAppDate').value = todayKey();
+  loadEditAppData();
+  document.getElementById('modalEditApp').classList.add('show');
+}
+
+function loadEditAppData() {
+  const name    = document.getElementById('editAppMember').value;
+  const dateKey = document.getElementById('editAppDate').value;
+  if (!name || !dateKey) return;
+  const rec = getRecByKey(name, dateKey);
+  renderEditAppForm(rec);
+}
+
+// オプションHTML生成ヘルパー
+function buildOptHtml_(values, selected) {
+  return values.map(v => `<option value="${v}"${v===selected?' selected':''}>${v}</option>`).join('');
+}
+function otTimeValues_() {
+  const vals = [];
+  for (let h=17;h<=24;h++){const ms=h===17?[30,45]:h===24?[0]:[0,15,30,45];ms.forEach(m=>vals.push(String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')));}
+  return vals;
+}
+function earlyTimeValues_() {
+  const vals=[];
+  for(let h=5;h<=7;h++) for(const m of[0,15,30,45]) vals.push(String(h).padStart(2,'0')+':'+String(m).padStart(2,'0'));
+  return vals;
+}
+
+function renderEditAppForm(rec) {
+  const form = document.getElementById('editAppForm');
+  const sectionStyle = 'margin-top:12px;border-top:1px solid var(--border);padding-top:10px;';
+  const labelStyle   = 'font-size:12px;color:var(--subtext);display:block;margin-bottom:4px;';
+  const selectStyle  = 'width:100%;border:1.5px solid var(--border);border-radius:9px;padding:8px 10px;font-size:14px;background:white;';
+  const timeStyle    = 'flex:1;border:1.5px solid var(--border);border-radius:9px;padding:8px 10px;font-size:14px;';
+  let html = '';
+
+  if (rec.ot) {
+    html += `<div style="${sectionStyle}">
+      <div style="font-size:13px;font-weight:700;color:var(--purple);margin-bottom:8px;">🕐 残業申請</div>
+      <label style="${labelStyle}">終了予定時刻</label>
+      <select id="eaOtEnd" style="${selectStyle}">${buildOptHtml_(otTimeValues_(), rec.ot.plannedEnd)}</select>
+    </div>`;
+  }
+  if (rec.early) {
+    html += `<div style="${sectionStyle}">
+      <div style="font-size:13px;font-weight:700;color:var(--blue);margin-bottom:8px;">🌅 早出申請</div>
+      <label style="${labelStyle}">開始時刻（〜8:00）</label>
+      <select id="eaEarlyStart" style="${selectStyle}">${buildOptHtml_(earlyTimeValues_(), rec.early.startTime)}</select>
+    </div>`;
+  }
+  if (rec.paid) {
+    const paidVals = getPaidTimes();
+    html += `<div style="${sectionStyle}">
+      <div style="font-size:13px;font-weight:700;color:var(--orange);margin-bottom:8px;">📅 有給申請</div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <div style="flex:1;"><label style="${labelStyle}">開始</label>
+          <select id="eaPaidStart" style="${selectStyle}">${buildOptHtml_(paidVals, rec.paid.startTime)}</select></div>
+        <span style="color:var(--subtext);padding-top:18px;">〜</span>
+        <div style="flex:1;"><label style="${labelStyle}">終了</label>
+          <select id="eaPaidEnd" style="${selectStyle}">${buildOptHtml_(paidVals, rec.paid.endTime)}</select></div>
+      </div>
+    </div>`;
+  }
+  if (rec.holiday) {
+    html += `<div style="${sectionStyle}">
+      <div style="font-size:13px;font-weight:700;color:var(--danger);margin-bottom:8px;">🏢 休日出勤申請</div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <div style="flex:1;"><label style="${labelStyle}">開始</label>
+          <input type="time" id="eaHolStart" value="${rec.holiday.startTime||''}" style="${timeStyle}"/></div>
+        <span style="color:var(--subtext);padding-top:18px;">〜</span>
+        <div style="flex:1;"><label style="${labelStyle}">終了</label>
+          <input type="time" id="eaHolEnd" value="${rec.holiday.endTime||''}" style="${timeStyle}"/></div>
+      </div>
+    </div>`;
+  }
+  if (!html) html = '<div style="font-size:13px;color:var(--subtext);padding:12px 0;">この日の申請データがありません</div>';
+  form.innerHTML = html;
+}
+
+function saveEditApp() {
+  const name    = document.getElementById('editAppMember').value;
+  const dateKey = document.getElementById('editAppDate').value;
+  if (!name || !dateKey) return;
+  const rec = getRecByKey(name, dateKey);
+
+  const eaOtEnd      = document.getElementById('eaOtEnd');
+  const eaEarlyStart = document.getElementById('eaEarlyStart');
+  const eaPaidStart  = document.getElementById('eaPaidStart');
+  const eaPaidEnd    = document.getElementById('eaPaidEnd');
+  const eaHolStart   = document.getElementById('eaHolStart');
+  const eaHolEnd     = document.getElementById('eaHolEnd');
+
+  if (eaOtEnd      && rec.ot)      rec.ot.plannedEnd        = eaOtEnd.value;
+  if (eaEarlyStart && rec.early)   rec.early.startTime      = eaEarlyStart.value;
+  if (eaPaidStart  && rec.paid)    rec.paid.startTime       = eaPaidStart.value;
+  if (eaPaidEnd    && rec.paid)    rec.paid.endTime         = eaPaidEnd.value;
+  if (eaHolStart   && rec.holiday) rec.holiday.startTime   = eaHolStart.value;
+  if (eaHolEnd     && rec.holiday) rec.holiday.endTime     = eaHolEnd.value;
+
+  saveData(); renderAll(); hideModal('modalEditApp');
+  syncRecordToGAS(name, dateKey);
+  showToast('✅ 申請時間を修正しました');
+}
+
+// ============================================================
 //  描画
 // ============================================================
 function renderAll() {
@@ -1502,7 +1646,8 @@ function renderHeaderRole() {
   el.className = 'header-role' + (admin ? ' admin' : '');
   document.getElementById('tab-members').style.display  = admin ? '' : 'none';
   document.getElementById('tab-approval').style.display = admin ? '' : 'none';
-  document.getElementById('adminEditArea').style.display = admin ? '' : 'none';
+  const editArea = document.getElementById('adminEditArea');
+  editArea.style.display = admin ? 'flex' : 'none';
 }
 
 function renderStatus() {
@@ -1605,7 +1750,24 @@ function renderStatus() {
   const earlyType   = APP_TYPES.find(t=>t.key==='early');
   const paidType    = APP_TYPES.find(t=>t.key==='paid');
   const holidayType = APP_TYPES.find(t=>t.key==='holiday');
-  renderAppBar('otStatusBar',      rec.ot,      otType,      rec.ot      ? rec.ot.plannedEnd+'まで'          : '');
+  // 残業申請は承認待ちのとき「取り消し」ボタンも表示
+  const otBar = document.getElementById('otStatusBar');
+  if (rec.ot) {
+    const {status, plannedEnd, comment} = rec.ot;
+    const icons  = {pending:'⏳', approved:'✅', rejected:'🚫'};
+    const labels = {pending:'承認待ち', approved:'承認済み', rejected:'却下'};
+    let txt = icons[status]+' 残業申請 '+labels[status]+' ／ '+plannedEnd+'まで';
+    if (status==='rejected' && comment) txt += '（'+comment+'）';
+    // 承認待ち・承認済みは取り消し可能（却下済みは不要）
+    const cancelBtn = status!=='rejected'
+      ? `<button onclick="cancelOt()" style="margin-left:8px;font-size:11px;padding:3px 9px;border:1px solid currentColor;border-radius:6px;background:transparent;color:inherit;cursor:pointer;opacity:.8;">取り消し</button>`
+      : '';
+    otBar.className = 'ot-status-bar '+status;
+    otBar.innerHTML = txt + cancelBtn;
+    otBar.style.display = '';
+  } else {
+    otBar.style.display = 'none';
+  }
   renderAppBar('earlyStatusBar',   rec.early,   earlyType,   rec.early   ? rec.early.startTime+'〜8:00'      : '');
   renderAppBar('paidStatusBar',    rec.paid,    paidType,    rec.paid    ? rec.paid.startTime+'〜'+rec.paid.endTime : '');
   renderAppBar('holidayStatusBar', rec.holiday, holidayType, rec.holiday ? rec.holiday.workDate+(rec.holiday.wantComp?'（振替希望）':'（振替なし）') : '');

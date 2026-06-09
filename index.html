@@ -277,6 +277,22 @@
     .myapp-status.rejected{background:#FFF0F0;color:var(--danger);}
     .myapp-approver{font-size:11px;color:var(--subtext);margin-left:6px;}
 
+    /* 出勤リマインダーバナー */
+    .checkin-banner{
+      position:fixed;top:56px;left:0;right:0;z-index:250;
+      background:linear-gradient(135deg,#007AFF,#0055CC);
+      color:white;padding:14px 18px;
+      display:flex;align-items:center;gap:12px;
+      box-shadow:0 4px 16px rgba(0,122,255,.35);
+      transform:translateY(-100%);transition:transform .35s ease-out;
+    }
+    .checkin-banner.show{transform:translateY(0);}
+    .checkin-banner .rb-icon{font-size:22px;flex-shrink:0;}
+    .checkin-banner .rb-text{flex:1;font-size:13px;line-height:1.5;}
+    .checkin-banner .rb-text strong{font-size:14px;display:block;margin-bottom:2px;}
+    .checkin-banner .rb-close{background:rgba(255,255,255,.25);border:none;color:white;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0;}
+    .checkin-banner .rb-close:hover{background:rgba(255,255,255,.4);}
+
     /* 退勤リマインダーバナー */
     .reminder-banner{
       position:fixed;bottom:0;left:0;right:0;z-index:250;
@@ -681,6 +697,16 @@
   </div>
 </div>
 
+<!-- 出勤リマインダーバナー -->
+<div class="checkin-banner" id="checkinBanner">
+  <span class="rb-icon">🌅</span>
+  <div class="rb-text">
+    <strong>出勤打刻をお忘れですか？</strong>
+    8:00 を過ぎています。出勤する場合は出勤ボタンを押してください。
+  </div>
+  <button class="rb-close" onclick="dismissCheckinReminder()">閉じる</button>
+</div>
+
 <!-- 退勤リマインダーバナー -->
 <div class="reminder-banner" id="reminderBanner">
   <span class="rb-icon">⏰</span>
@@ -1015,6 +1041,7 @@ function doLogin() {
   saveSession(name);
   renderAll();
   requestNotifPermission();
+  checkCheckinReminder();
   checkOvertimeReminder();
   // 管理者ログイン時はGASから最新データを取得してバッジを更新
   if (isAdmin(name) && gasUrl) fetchAllFromGAS();
@@ -2198,7 +2225,8 @@ function switchTab(tab) {
 // ============================================================
 //  退勤リマインダー通知
 // ============================================================
-const REMINDER_KEY = 'kintai_reminder_shown'; // 今日通知済みかどうか
+const REMINDER_KEY        = 'kintai_reminder_shown';       // 退勤リマインダー通知済み
+const CHECKIN_REMINDER_KEY = 'kintai_checkin_reminder_shown'; // 出勤リマインダー通知済み
 
 // ブラウザ通知の許可をリクエスト（ログイン時に呼ぶ）
 function requestNotifPermission() {
@@ -2211,6 +2239,53 @@ function requestNotifPermission() {
 function dismissReminder() {
   document.getElementById('reminderBanner').classList.remove('show');
   localStorage.setItem(REMINDER_KEY, todayKey());
+}
+
+// 出勤リマインダーを閉じる（今日はもう表示しない）
+function dismissCheckinReminder() {
+  document.getElementById('checkinBanner').classList.remove('show');
+  localStorage.setItem(CHECKIN_REMINDER_KEY, todayKey());
+}
+
+// 出勤リマインダー条件チェック（8:00 を過ぎても打刻がない場合）
+function checkCheckinReminder() {
+  // 管理者・未ログインは対象外
+  if (!currentUser || isAdmin(currentUser)) {
+    document.getElementById('checkinBanner').classList.remove('show');
+    return;
+  }
+
+  const now = new Date();
+  const totalMin = now.getHours() * 60 + now.getMinutes();
+
+  // 8:00（480分）を過ぎていない → バナーを消す
+  if (totalMin < 8 * 60) {
+    document.getElementById('checkinBanner').classList.remove('show');
+    return;
+  }
+
+  const rec = getTodayRec();
+  const hasClockedIn = rec.pairs && rec.pairs.length > 0 && rec.pairs[0].in;
+
+  if (!hasClockedIn) {
+    // アプリ内バナーを表示
+    document.getElementById('checkinBanner').classList.add('show');
+
+    // ブラウザ通知（今日まだ出していない場合）
+    const shownDate = localStorage.getItem(CHECKIN_REMINDER_KEY);
+    if (shownDate !== todayKey()) {
+      localStorage.setItem(CHECKIN_REMINDER_KEY, todayKey());
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('🌅 出勤打刻のお知らせ', {
+          body: '8:00を過ぎています。出勤する場合は出勤ボタンを押してください。',
+          tag: 'kintai-checkin-reminder'
+        });
+      }
+    }
+  } else {
+    // 打刻済みならバナーを消す
+    document.getElementById('checkinBanner').classList.remove('show');
+  }
 }
 
 // リマインダー条件チェック
@@ -2309,6 +2384,7 @@ setInterval(()=>{
   if (isCurrentlyWorking(rec)) renderAll();
   // 一般メンバーも残業申請の承認状況をGASから取得
   if (gasUrl) fetchAllFromGAS();
+  checkCheckinReminder();  // 出勤リマインダーチェック
   checkOvertimeReminder(); // 退勤リマインダーチェック
 }, 30000); // 30秒ごと
 </script>

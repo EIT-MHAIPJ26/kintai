@@ -150,15 +150,20 @@
 
     /* メンバー状況一覧 */
     .member-status-grid{display:flex;flex-direction:column;gap:0;}
-    .ms-item{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border);}
+    .ms-item{display:flex;align-items:flex-start;gap:12px;padding:11px 0;border-bottom:1px solid var(--border);}
     .ms-item:last-child{border-bottom:none;}
-    .ms-avatar{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;}
+    .ms-avatar{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;margin-top:1px;}
     .ms-avatar.working{background:#E8F9EF;}
     .ms-avatar.done{background:#EBF4FF;}
     .ms-avatar.absent{background:#F2F2F7;}
     .ms-info{flex:1;min-width:0;}
     .ms-name{font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-    .ms-times{font-size:12px;color:var(--subtext);margin-top:2px;font-variant-numeric:tabular-nums;}
+    .ms-times{font-size:12px;color:var(--subtext);margin-top:3px;font-variant-numeric:tabular-nums;line-height:1.7;}
+    .ms-pair-row{display:flex;align-items:center;gap:4px;}
+    .ms-pair-num{font-size:10px;color:var(--subtext);min-width:14px;}
+    .ms-pair-label{font-size:10px;padding:1px 5px;border-radius:5px;font-weight:600;margin-left:3px;}
+    .ms-pair-label.out-label{background:#F0F0F5;color:var(--subtext);}
+    .ms-pair-label.in-label{background:#E8F9EF;color:var(--primary-dark);}
     .ms-right{text-align:right;flex-shrink:0;}
     .ms-badge{font-size:11px;font-weight:700;padding:3px 9px;border-radius:10px;display:inline-block;}
     .ms-badge.working{background:#E8F9EF;color:var(--primary-dark);}
@@ -2116,24 +2121,56 @@ function renderMemberStatus() {
   rows.forEach(r => {
     let timeTxt;
     if (r.pairs.length === 0) {
-      timeTxt = '---';
+      timeTxt = '<span style="color:var(--subtext)">---</span>';
     } else if (r.pairs.length === 1) {
       const p = r.pairs[0];
-      timeTxt = fmtTime(p.in) + ' 〜 ' + (p.out ? fmtTime(p.out) : '勤務中');
+      const outTxt = p.out
+        ? fmtTime(p.out)
+        : '<b style="color:var(--primary-dark)">勤務中</b>';
+      timeTxt = `<div class="ms-pair-row">${fmtTime(p.in)} 〜 ${outTxt}</div>`;
     } else {
-      // 途中退出あり：全ペアを表示
-      timeTxt = r.pairs.map((p, i) =>
-        `<span style="font-size:10px;color:var(--subtext);">${i+1}.</span> ${fmtTime(p.in)}〜${p.out ? fmtTime(p.out) : '<b style="color:var(--primary-dark)">勤務中</b>'}`
-      ).join('<br>');
+      // 中抜けあり：全ペアを番号付きで表示
+      timeTxt = r.pairs.map((p, i) => {
+        const isLast = i === r.pairs.length - 1;
+        const outTxt = p.out
+          ? fmtTime(p.out)
+          : '<b style="color:var(--primary-dark)">勤務中</b>';
+        // 中抜け中（前のペアが終わっていて次が始まっている）のラベル
+        const nextPair = r.pairs[i + 1];
+        const breakLabel = (p.out && nextPair && !isLast)
+          ? `<span class="ms-pair-label out-label">中抜け中</span>` : '';
+        const resumeLabel = (i > 0 && p.in)
+          ? `<span class="ms-pair-label in-label">再出勤</span>` : '';
+        return `<div class="ms-pair-row">
+          <span class="ms-pair-num">${i+1}.</span>
+          ${resumeLabel}
+          ${fmtTime(p.in)} 〜 ${outTxt}
+          ${breakLabel}
+        </div>`;
+      }).join('');
     }
     const durTxt = r.totalMin > 0 ? fmtMin(r.totalMin) + (r.working ? ' (進行中)' : '') : '';
     const item = document.createElement('div');
     item.className = 'ms-item';
     const labels = {working:'勤務中', done:'退勤済み', absent:'未出勤'};
+    // 中抜け中かどうかのバッジ
+    const isOnBreak = r.pairs.length > 1 && !r.working && r.pairs[r.pairs.length-1].out;
+    const isInBreak = r.pairs.length >= 1 && r.pairs[r.pairs.length-1].out && r.pairs.length > 0 && !r.working && r.pairs.some((p,i) => i < r.pairs.length-1);
+    // 現在中抜け中（最後のペアが退勤済みで、複数ペアあり、勤務中でない、かつ再出勤していない）
+    const onBreakNow = r.pairs.length >= 1 && !r.working && r.pairs[r.pairs.length-1].out
+      && r.pairs.length > 0
+      && (() => {
+        // 最後のペアの退勤後、まだ再出勤していない = 今日まだ中抜け状態
+        // pairs数が奇数の完了ペアならすべて退勤済み→退勤済み扱い
+        // 中抜け中とは: 退勤しているが、その日の最初の出勤から最終退勤の間に「戻り」が予定される状態
+        // シンプルに: pairs > 1 で 勤務中でない = 退勤済み or 中抜け後退勤
+        return false; // 複雑なので簡略化：中抜けは「複数ペアかつ勤務中」の時だけ特別表示
+      })();
+
     item.innerHTML = `
       <div class="ms-avatar ${r.state}">${r.icon}</div>
       <div class="ms-info">
-        <div class="ms-name">${r.name}</div>
+        <div class="ms-name">${r.name}${r.pairs.length > 1 ? '<span style="font-size:10px;color:var(--subtext);margin-left:5px;">中抜けあり</span>' : ''}</div>
         <div class="ms-times">${timeTxt}</div>
       </div>
       <div class="ms-right">

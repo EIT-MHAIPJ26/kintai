@@ -927,16 +927,21 @@ function hideModal(id){ document.getElementById(id).classList.remove('show'); }
 // 旧フォーマット: { in:ts, out:ts, ot:null } → 自動変換
 
 function migrateRec(rec) {
-  if (!rec) return { pairs:[], ot:null, early:null, paid:null, holiday:null };
+  if (!rec) return { pairs:[], ot:null, early:null, paid:[], holiday:[] };
   // 旧形式（pairs なし）を変換
   if (!rec.pairs) {
     const pair = { in: rec.in||null, out: rec.out||null };
     rec = { pairs: pair.in ? [pair] : [], ot: rec.ot||null };
   }
-  // 新フィールドが未定義なら null で補完
+  // 新フィールドが未定義なら補完
   if (!('early'   in rec)) rec.early   = null;
-  if (!('paid'    in rec)) rec.paid    = null;
-  if (!('holiday' in rec)) rec.holiday = null;
+  if (!('paid'    in rec)) rec.paid    = [];
+  if (!('holiday' in rec)) rec.holiday = [];
+  // 旧形式（単体オブジェクト）→配列に変換
+  if (rec.paid && !Array.isArray(rec.paid)) rec.paid = [rec.paid];
+  if (rec.holiday && !Array.isArray(rec.holiday)) rec.holiday = [rec.holiday];
+  if (!Array.isArray(rec.paid))    rec.paid    = [];
+  if (!Array.isArray(rec.holiday)) rec.holiday = [];
   return rec;
 }
 
@@ -1229,13 +1234,21 @@ function getAppSummary(rec, type) {
   return '';
 }
 
-// 汎用承認
-function approveApplication(userName, dateKey, type) {
+// 汎用承認（idx は有給・休日出勤の配列インデックス）
+function approveApplication(userName, dateKey, type, idx) {
   const rec = getRecByKey(userName, dateKey);
-  if (!rec?.[type]) return;
-  rec[type].status = 'approved';
-  rec[type].approvedBy = currentUser;
-  rec[type].approvedAt = Date.now();
+  if (idx !== undefined && idx !== null && idx !== '') {
+    const i = parseInt(idx);
+    if (!Array.isArray(rec[type]) || !rec[type][i]) return;
+    rec[type][i].status = 'approved';
+    rec[type][i].approvedBy = currentUser;
+    rec[type][i].approvedAt = Date.now();
+  } else {
+    if (!rec?.[type]) return;
+    rec[type].status = 'approved';
+    rec[type].approvedBy = currentUser;
+    rec[type].approvedAt = Date.now();
+  }
   saveData(); renderAll();
   syncRecordToGAS(userName, dateKey);
   showToast('✅ 承認しました');
@@ -1293,6 +1306,20 @@ function cancelOt() {
   showToast('🗑️ 残業申請を取り消しました');
 }
 
+// 有給・休日出勤の取り消し（配列型）
+function cancelApp(type, idx) {
+  if (!currentUser) return;
+  const rec = getTodayRec();
+  if (!Array.isArray(rec[type]) || !rec[type][idx]) { showToast('取り消しできる申請がありません'); return; }
+  if (rec[type][idx].status === 'rejected') { showToast('取り消しできる申請がありません'); return; }
+  const typeName = APP_TYPES.find(t=>t.key===type)?.label || type;
+  if (!confirm(typeName+'を取り消しますか？')) return;
+  rec[type].splice(idx, 1);
+  saveData(); renderAll();
+  syncRecordToGAS(currentUser, todayKey());
+  showToast('🗑️ '+typeName+'を取り消しました');
+}
+
 function approveOt(userName, dateKey) {
   const rec = getRecByKey(userName, dateKey);
   if (!rec?.ot) return;
@@ -1302,21 +1329,30 @@ function approveOt(userName, dateKey) {
   showToast('✅ '+userName+'の残業申請を承認しました');
 }
 
-function showRejectModal(userName, dateKey, type) {
+function showRejectModal(userName, dateKey, type, idx) {
   type = type || 'ot';
-  pendingRejectKey = userName+'|'+dateKey+'|'+type;
+  pendingRejectKey = userName+'|'+dateKey+'|'+type+'|'+(idx !== undefined && idx !== null ? idx : '');
   document.getElementById('rejectComment').value = '';
   document.getElementById('rejectModal').classList.add('show');
 }
 
 function confirmReject() {
   if (!pendingRejectKey) return;
-  const parts = pendingRejectKey.split('|');
-  const userName = parts[0], dateKey = parts[1], type = parts[2] || 'ot';
-  const rec = getRecByKey(userName, dateKey);
-  if (rec?.[type]) {
-    rec[type].status='rejected'; rec[type].approvedBy=currentUser; rec[type].approvedAt=Date.now();
-    rec[type].comment = document.getElementById('rejectComment').value.trim();
+  const parts    = pendingRejectKey.split('|');
+  const userName = parts[0], dateKey = parts[1], type = parts[2] || 'ot', idxStr = parts[3];
+  const rec      = getRecByKey(userName, dateKey);
+  const comment  = document.getElementById('rejectComment').value.trim();
+  if (idxStr !== undefined && idxStr !== '') {
+    const i = parseInt(idxStr);
+    if (Array.isArray(rec?.[type]) && rec[type][i]) {
+      rec[type][i].status='rejected'; rec[type][i].approvedBy=currentUser;
+      rec[type][i].approvedAt=Date.now(); rec[type][i].comment=comment;
+    }
+  } else {
+    if (rec?.[type]) {
+      rec[type].status='rejected'; rec[type].approvedBy=currentUser;
+      rec[type].approvedAt=Date.now(); rec[type].comment=comment;
+    }
   }
   pendingRejectKey = null; saveData(); renderAll(); hideModal('rejectModal');
   syncRecordToGAS(userName, dateKey);
@@ -1412,9 +1448,11 @@ function submitPaid() {
   if (!date)    { showToast('対象日を選択してください'); return; }
   if (!endTime) { showToast('終了時刻を選択してください'); return; }
   const rec = getRecByKey(currentUser, date);
-  if (rec.paid?.status === 'pending')  { showToast('申請中です'); return; }
-  if (rec.paid?.status === 'approved') { showToast('承認済みです'); return; }
-  rec.paid = { startTime, endTime, reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
+  if (!Array.isArray(rec.paid)) rec.paid = rec.paid ? [rec.paid] : [];
+  // 同じ時間帯で申請中・承認済みがあれば重複NG
+  const dup = rec.paid.find(p => p.status !== 'rejected' && p.startTime === startTime && p.endTime === endTime);
+  if (dup) { showToast('同じ時間帯の有給申請があります'); return; }
+  rec.paid.push({ startTime, endTime, reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' });
   saveData(); renderAll(); hideModal('modalPaid');
   syncRecordToGAS(currentUser, date);
   showToast('📅 有給申請を送信しました（'+startTime+'〜'+endTime+'）');
@@ -1455,9 +1493,11 @@ function submitHoliday() {
   if (!reason)    { showToast('理由を入力してください'); return; }
   if (wantComp && !compDate) { showToast('振替希望日を入力してください'); return; }
   const rec = getRecByKey(currentUser, workDate);
-  if (rec.holiday?.status === 'pending')  { showToast('申請中です'); return; }
-  if (rec.holiday?.status === 'approved') { showToast('承認済みです'); return; }
-  rec.holiday = { workDate, startTime, endTime, wantComp, compDate: wantComp?compDate:'', compTime: wantComp?compTime:'', reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
+  if (!Array.isArray(rec.holiday)) rec.holiday = rec.holiday ? [rec.holiday] : [];
+  // 同じ時間帯で申請中・承認済みがあれば重複NG
+  const dup = rec.holiday.find(h => h.status !== 'rejected' && h.startTime === startTime && h.endTime === endTime);
+  if (dup) { showToast('同じ時間帯の休日出勤申請があります'); return; }
+  rec.holiday.push({ workDate, startTime, endTime, wantComp, compDate: wantComp?compDate:'', compTime: wantComp?compTime:'', reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' });
   saveData(); renderAll(); hideModal('modalHoliday');
   syncRecordToGAS(currentUser, workDate);
   showToast('🏢 休日出勤申請を送信しました（'+startTime+'〜'+endTime+'）');
@@ -1796,7 +1836,7 @@ function renderStatus() {
     pl.style.display = 'none';
   }
 
-  // ── 各種申請ステータスバー ──
+  // ── 各種申請ステータスバー（単体用）──
   function renderAppBar(barId, app, typeInfo, detailText) {
     const bar = document.getElementById(barId);
     if (!app) { bar.style.display='none'; return; }
@@ -1806,6 +1846,28 @@ function renderStatus() {
     if (app.status==='rejected'&&app.comment) txt += '（'+app.comment+'）';
     bar.className = 'ot-status-bar '+typeInfo.barClass;
     bar.innerHTML = txt; bar.style.display = '';
+  }
+  // ── 配列型ステータスバー（有給・休日出勤）──
+  function renderMultiAppBars(containerId, apps, typeInfo, detailFn) {
+    const container = document.getElementById(containerId);
+    container.innerHTML = '';
+    const list = Array.isArray(apps) ? apps.filter(Boolean) : (apps ? [apps] : []);
+    if (list.length === 0) { container.style.display = 'none'; return; }
+    container.style.display = '';
+    const icons  = {pending:'⏳', approved:'✅', rejected:'🚫'};
+    const labels = {pending:'承認待ち', approved:'承認済み', rejected:'却下'};
+    list.forEach((app, idx) => {
+      const bar = document.createElement('div');
+      let txt = icons[app.status]+' '+typeInfo.label+' '+labels[app.status]+' ／ '+detailFn(app);
+      if (app.status === 'rejected' && app.comment) txt += '（'+app.comment+'）';
+      const cancelBtn = app.status !== 'rejected'
+        ? `<button onclick="cancelApp('${typeInfo.key}',${idx})" style="margin-left:8px;font-size:11px;padding:3px 9px;border:1px solid currentColor;border-radius:6px;background:transparent;color:inherit;cursor:pointer;opacity:.8;">取り消し</button>`
+        : '';
+      bar.className = 'ot-status-bar '+typeInfo.barClass+(app.status==='rejected'?' rejected':'');
+      bar.innerHTML = txt + cancelBtn;
+      if (idx < list.length - 1) bar.style.marginBottom = '6px';
+      container.appendChild(bar);
+    });
   }
   const otType      = APP_TYPES.find(t=>t.key==='ot');
   const earlyType   = APP_TYPES.find(t=>t.key==='early');
@@ -1829,9 +1891,9 @@ function renderStatus() {
   } else {
     otBar.style.display = 'none';
   }
-  renderAppBar('earlyStatusBar',   rec.early,   earlyType,   rec.early   ? rec.early.startTime+'〜8:00'      : '');
-  renderAppBar('paidStatusBar',    rec.paid,    paidType,    rec.paid    ? rec.paid.startTime+'〜'+rec.paid.endTime : '');
-  renderAppBar('holidayStatusBar', rec.holiday, holidayType, rec.holiday ? rec.holiday.workDate+(rec.holiday.wantComp?'（振替希望）':'（振替なし）') : '');
+  renderAppBar('earlyStatusBar', rec.early, earlyType, rec.early ? rec.early.startTime+'〜8:00' : '');
+  renderMultiAppBars('paidStatusBar',    rec.paid,    paidType,    app => app.startTime+'〜'+app.endTime);
+  renderMultiAppBars('holidayStatusBar', rec.holiday, holidayType, app => app.workDate+(app.wantComp?'（振替希望）':'（振替なし）'));
 
   // ── 今日以降の申請をすべて表示 ──
   renderUpcomingApps();
@@ -1848,22 +1910,20 @@ function renderUpcomingApps() {
   Object.entries(recs).forEach(([dateKey, r]) => {
     const rec = migrateRec(r);
     APP_TYPES.forEach(t => {
-      const app = rec[t.key];
-      if (!app || app.status === 'rejected') return;
-      // 対象日（holidayはworkDate、それ以外はdateKey）
-      const targetDate = (t.key === 'holiday' && app.workDate) ? app.workDate : dateKey;
-      // 今日より前は非表示
-      if (targetDate < today) return;
-      // 今日分は既存ステータスバーで表示済みなのでスキップ
-      if (dateKey === today) return;
-
-      let detail = '';
-      if (t.key==='ot')           detail = app.plannedEnd+'まで';
-      else if (t.key==='early')   detail = app.startTime+'〜8:00';
-      else if (t.key==='paid')    detail = app.startTime+'〜'+app.endTime;
-      else if (t.key==='holiday') detail = (app.startTime||'')+'〜'+(app.endTime||'');
-
-      items.push({ targetDate, typeInfo:t, app, detail });
+      const val = rec[t.key];
+      const apps = Array.isArray(val) ? val : (val ? [val] : []);
+      apps.forEach(app => {
+        if (!app || app.status === 'rejected') return;
+        const targetDate = (t.key === 'holiday' && app.workDate) ? app.workDate : dateKey;
+        if (targetDate < today) return;
+        if (dateKey === today) return;
+        let detail = '';
+        if (t.key==='ot')           detail = app.plannedEnd+'まで';
+        else if (t.key==='early')   detail = app.startTime+'〜8:00';
+        else if (t.key==='paid')    detail = app.startTime+'〜'+app.endTime;
+        else if (t.key==='holiday') detail = (app.startTime||'')+'〜'+(app.endTime||'');
+        items.push({ targetDate, typeInfo:t, app, detail });
+      });
     });
   });
 
@@ -2024,14 +2084,17 @@ function renderMyApplications() {
     const dateStr = (d.getMonth()+1)+'/'+d.getDate()+'（'+WEEKDAYS[d.getDay()]+'）';
 
     APP_TYPES.forEach(t => {
-      const app = rec[t.key];
-      if (!app) return;
-      let detail = '';
-      if (t.key==='ot')      detail = '残業予定 '+app.plannedEnd+'まで';
-      else if (t.key==='early')   detail = '早出 '+app.startTime+'〜8:00';
-      else if (t.key==='paid')    detail = '有給 '+app.startTime+'〜'+app.endTime;
-      else if (t.key==='holiday') detail = '休日出勤 '+app.workDate+' '+(app.startTime||'')+'〜'+(app.endTime||'')+(app.wantComp?' 振替希望':'');
-      items.push({ dateKey, dateStr, type:t.key, typeInfo:t, app, detail });
+      const val = rec[t.key];
+      const apps = Array.isArray(val) ? val : (val ? [val] : []);
+      apps.forEach(app => {
+        if (!app) return;
+        let detail = '';
+        if (t.key==='ot')           detail = '残業予定 '+app.plannedEnd+'まで';
+        else if (t.key==='early')   detail = '早出 '+app.startTime+'〜8:00';
+        else if (t.key==='paid')    detail = '有給 '+app.startTime+'〜'+app.endTime;
+        else if (t.key==='holiday') detail = '休日出勤 '+app.workDate+' '+(app.startTime||'')+'〜'+(app.endTime||'')+(app.wantComp?' 振替希望':'');
+        items.push({ dateKey, dateStr, type:t.key, typeInfo:t, app, detail });
+      });
     });
   });
 
@@ -2185,7 +2248,11 @@ function renderApprovalTab() {
   getUserNames().forEach(name=>{
     Object.values(getUserRecords(name)).forEach(r=>{
       const rec=migrateRec(r);
-      APP_TYPES.forEach(t=>{ if(rec[t.key]?.status==='pending') count++; });
+      APP_TYPES.forEach(t=>{
+        const val=rec[t.key];
+        if(Array.isArray(val)) val.forEach(a=>{ if(a?.status==='pending') count++; });
+        else if(val?.status==='pending') count++;
+      });
     });
   });
   const badge=document.getElementById('approvalBadge');
@@ -2201,31 +2268,36 @@ function renderApprovalList() {
     Object.entries(getUserRecords(name)).forEach(([dateKey,r])=>{
       const rec=migrateRec(r);
       APP_TYPES.forEach(t=>{
-        if(rec[t.key]?.status==='pending') items.push({name,dateKey,rec,type:t.key,typeInfo:t});
+        const val=rec[t.key];
+        if(Array.isArray(val)){
+          val.forEach((app,idx)=>{ if(app?.status==='pending') items.push({name,dateKey,rec,type:t.key,typeInfo:t,app,idx}); });
+        } else if(val?.status==='pending'){
+          items.push({name,dateKey,rec,type:t.key,typeInfo:t,app:val,idx:null});
+        }
       });
     });
   });
   items.sort((a,b)=>b.dateKey.localeCompare(a.dateKey));
   if(items.length===0){list.innerHTML='<div class="empty-state">📭 承認待ちの申請はありません</div>';return;}
 
-  items.forEach(({name,dateKey,rec,type,typeInfo})=>{
-    const app=rec[type];
+  items.forEach(({name,dateKey,rec,type,typeInfo,app,idx})=>{
     const d=new Date(dateKey.replace(/-/g,'/'));
     const dateStr=(d.getMonth()+1)+'/'+d.getDate()+'（'+WEEKDAYS[d.getDay()]+'）';
 
     // 申請内容テキスト
     let detailHtml='';
-    if(type==='ot')      detailHtml=`${typeInfo.icon} 残業予定 <strong>${app.plannedEnd}</strong>まで`;
+    if(type==='ot')           detailHtml=`${typeInfo.icon} 残業予定 <strong>${app.plannedEnd}</strong>まで`;
     else if(type==='early')   detailHtml=`${typeInfo.icon} 早出 <strong>${app.startTime}〜8:00</strong>`;
     else if(type==='paid')    detailHtml=`${typeInfo.icon} 有給 <strong>${app.startTime}〜${app.endTime}</strong>`;
     else if(type==='holiday') detailHtml=`${typeInfo.icon} 休日出勤 <strong>${app.workDate}</strong> ${app.startTime||''}〜${app.endTime||''} ${app.wantComp?` 振替希望：${app.compDate}${app.compTime?' '+app.compTime:''}`:'（振替なし）'}`;
 
     const isSelf = name === currentUser;
+    const idxArg = idx !== null ? `,${idx}` : '';
     const actionHtml = isSelf
       ? `<div class="approval-done" style="background:#F2F2F7;color:var(--subtext);">⏳ 他の管理者の承認待ちです</div>`
       : `<div class="approval-buttons">
-          <button class="btn-approve" onclick="approveApplication('${name}','${dateKey}','${type}')">✅ 承認</button>
-          <button class="btn-reject"  onclick="showRejectModal('${name}','${dateKey}','${type}')">🚫 却下</button>
+          <button class="btn-approve" onclick="approveApplication('${name}','${dateKey}','${type}'${idxArg})">✅ 承認</button>
+          <button class="btn-reject"  onclick="showRejectModal('${name}','${dateKey}','${type}'${idxArg})">🚫 却下</button>
         </div>`;
 
     const item=document.createElement('div');

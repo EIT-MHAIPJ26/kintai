@@ -287,12 +287,9 @@
       position:fixed;top:56px;left:0;right:0;z-index:250;
       background:linear-gradient(135deg,#007AFF,#0055CC);
       color:white;padding:14px 18px;
-      display:flex;align-items:center;gap:12px;
+      display:none;align-items:center;gap:12px;
       box-shadow:0 4px 16px rgba(0,122,255,.35);
-      opacity:0;pointer-events:none;
-      transform:translateY(-6px);transition:opacity .3s ease,transform .3s ease;
     }
-    .checkin-banner.show{opacity:1;pointer-events:auto;transform:translateY(0);}
     .checkin-banner .rb-icon{font-size:22px;flex-shrink:0;}
     .checkin-banner .rb-text{flex:1;font-size:13px;line-height:1.5;}
     .checkin-banner .rb-text strong{font-size:14px;display:block;margin-bottom:2px;}
@@ -704,7 +701,7 @@
 </div>
 
 <!-- 出勤リマインダーバナー -->
-<div class="checkin-banner" id="checkinBanner">
+<div class="checkin-banner" id="checkinBanner" style="display:none">
   <span class="rb-icon">🌅</span>
   <div class="rb-text">
     <strong>出勤打刻をお忘れですか？</strong>
@@ -1198,7 +1195,7 @@ function clockIn() {
   syncRecordToGAS(currentUser, todayKey());
   showToast('☀️ 出勤しました！ '+fmtTime(rec.pairs[rec.pairs.length-1].in));
   // 出勤打刻でリマインダーを即座に非表示
-  document.getElementById('checkinBanner').classList.remove('show');
+  document.getElementById('checkinBanner').style.display = 'none';
 }
 
 function clockOut() {
@@ -2283,55 +2280,54 @@ function dismissReminder() {
 
 // 出勤リマインダーを閉じる（今日はもう表示しない）
 function dismissCheckinReminder() {
-  document.getElementById('checkinBanner').classList.remove('show');
+  document.getElementById('checkinBanner').style.display = 'none';
   localStorage.setItem(CHECKIN_REMINDER_KEY, todayKey());
 }
 
 // 出勤リマインダー条件チェック（8:00 を過ぎても打刻がない場合）
 function checkCheckinReminder() {
+  const banner = document.getElementById('checkinBanner');
+
   // 管理者・未ログインは対象外
   if (!currentUser || isAdmin(currentUser)) {
-    document.getElementById('checkinBanner').classList.remove('show');
+    banner.style.display = 'none';
     return;
   }
 
   const now = new Date();
   const totalMin = now.getHours() * 60 + now.getMinutes();
 
-  // 8:00（480分）を過ぎていない → バナーを消す
+  // 8:00（480分）を過ぎていない → 非表示
   if (totalMin < 8 * 60) {
-    document.getElementById('checkinBanner').classList.remove('show');
+    banner.style.display = 'none';
     return;
   }
 
   const rec = getTodayRec();
   const hasClockedIn = rec.pairs && rec.pairs.length > 0 && rec.pairs[0].in;
 
-  // 今日すでに「閉じる」を押した場合は再表示しない
-  const dismissedDate = localStorage.getItem(CHECKIN_REMINDER_KEY);
-  if (dismissedDate === todayKey() && !hasClockedIn) {
-    document.getElementById('checkinBanner').classList.remove('show');
+  // 打刻済み → 非表示
+  if (hasClockedIn) {
+    banner.style.display = 'none';
     return;
   }
 
-  if (!hasClockedIn) {
-    // アプリ内バナーを表示
-    document.getElementById('checkinBanner').classList.add('show');
+  // 今日すでに「閉じる」を押した → 非表示
+  if (localStorage.getItem(CHECKIN_REMINDER_KEY) === todayKey()) {
+    banner.style.display = 'none';
+    return;
+  }
 
-    // ブラウザ通知（今日まだ出していない場合）
-    const shownDate = localStorage.getItem(CHECKIN_REMINDER_KEY);
-    if (shownDate !== todayKey()) {
-      localStorage.setItem(CHECKIN_REMINDER_KEY, todayKey());
-      if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification('🌅 出勤打刻のお知らせ', {
-          body: '8:00を過ぎています。出勤する場合は出勤ボタンを押してください。',
-          tag: 'kintai-checkin-reminder'
-        });
-      }
-    }
-  } else {
-    // 打刻済みならバナーを消す
-    document.getElementById('checkinBanner').classList.remove('show');
+  // 条件を満たす → 表示
+  banner.style.display = 'flex';
+
+  // ブラウザ通知（今日初回のみ）
+  localStorage.setItem(CHECKIN_REMINDER_KEY, todayKey());
+  if ('Notification' in window && Notification.permission === 'granted') {
+    new Notification('🌅 出勤打刻のお知らせ', {
+      body: '8:00を過ぎています。出勤する場合は出勤ボタンを押してください。',
+      tag: 'kintai-checkin-reminder'
+    });
   }
 }
 

@@ -1191,6 +1191,8 @@ function clockIn() {
   saveData(); renderAll();
   syncRecordToGAS(currentUser, todayKey());
   showToast('☀️ 出勤しました！ '+fmtTime(rec.pairs[rec.pairs.length-1].in));
+  // 出勤打刻でリマインダーを即座に非表示
+  document.getElementById('checkinBanner').classList.remove('show');
 }
 
 function clockOut() {
@@ -2266,6 +2268,13 @@ function checkCheckinReminder() {
 
   const rec = getTodayRec();
   const hasClockedIn = rec.pairs && rec.pairs.length > 0 && rec.pairs[0].in;
+
+  // 今日すでに「閉じる」を押した場合は再表示しない
+  const dismissedDate = localStorage.getItem(CHECKIN_REMINDER_KEY);
+  if (dismissedDate === todayKey() && !hasClockedIn) {
+    document.getElementById('checkinBanner').classList.remove('show');
+    return;
+  }
 
   if (!hasClockedIn) {
     // アプリ内バナーを表示

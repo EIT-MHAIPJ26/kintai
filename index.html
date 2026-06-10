@@ -821,9 +821,18 @@ function fetchAllFromGAS(onDone) {
       if (!data.records[name]) data.records[name] = {};
       Object.entries(recs).forEach(([dk, rec]) => {
         if (name === currentUser && dk === today) {
-          // 自分の今日分：打刻ペアはローカル優先、残業承認ステータスはGAS優先
           if (!data.records[name][dk]) data.records[name][dk] = { pairs:[], ot:null };
-          if (rec.ot) data.records[name][dk].ot = rec.ot;
+          const localPairs = data.records[name][dk].pairs || [];
+          if (localPairs.length === 0) {
+            // このデバイスにまだ打刻なし → GASのデータをそのまま使用（別デバイスで打刻した場合）
+            data.records[name][dk] = rec;
+          } else {
+            // このデバイスに打刻あり → 打刻はローカル優先、申請ステータスはGAS優先
+            if (rec.ot)    data.records[name][dk].ot      = rec.ot;
+            if (rec.early) data.records[name][dk].early   = rec.early;
+            if (Array.isArray(rec.paid)    && rec.paid.length    > 0) data.records[name][dk].paid    = rec.paid;
+            if (Array.isArray(rec.holiday) && rec.holiday.length > 0) data.records[name][dk].holiday = rec.holiday;
+          }
           return;
         }
         data.records[name][dk] = rec;

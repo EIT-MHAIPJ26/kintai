@@ -802,8 +802,18 @@ function syncRecordToGAS(name, dateKey) {
     body: JSON.stringify({ action:'upsertRecord', name, date:dateKey, pairs:rec.pairs||[], ot:rec.ot||null, early:rec.early||null, paid:rec.paid||null, holiday:rec.holiday||null })
   })
   .then(r => r.json())
-  .then(j => updateSyncIndicator(j.ok ? 'ok' : 'error'))
-  .catch(() => updateSyncIndicator('error'));
+  .then(j => {
+    if (j.ok) {
+      updateSyncIndicator('ok');
+    } else {
+      updateSyncIndicator('error');
+      showToast('❌ GASエラー: ' + (j.error || '不明'));
+    }
+  })
+  .catch(err => {
+    updateSyncIndicator('error');
+    showToast('❌ 通信エラー: ' + (err.message || '接続できません'));
+  });
 }
 
 // GASから全員のデータを取得してローカルにマージ

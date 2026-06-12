@@ -1822,8 +1822,8 @@ function renderStatus() {
     document.getElementById('btnIn').disabled  = false;  // 再出勤可能
     document.getElementById('btnOut').disabled = true;
     document.getElementById('btnOt').disabled  = rec.ot?.status==='pending'||rec.ot?.status==='approved';
-    document.getElementById('btnOt').textContent =
-      rec.ot?.status==='pending'?'🕐 申請中…':rec.ot?.status==='approved'?'✅ 残業承認済み':'🕐 残業申請';
+    document.getElementById('btnOtText').textContent =
+      rec.ot?.status==='pending'?'申請中…':rec.ot?.status==='approved'?'残業承認済み':'残業申請';
   }
 
   // 残業予定

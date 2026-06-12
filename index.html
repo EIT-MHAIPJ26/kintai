@@ -1060,8 +1060,8 @@ function doLogin() {
   requestNotifPermission();
   checkCheckinReminder();
   checkOvertimeReminder();
-  // 管理者ログイン時はGASから最新データを取得してバッジを更新
-  if (isAdmin(name) && gasUrl) fetchAllFromGAS();
+  // ログイン時は全員GASから最新データを取得（別デバイスでの打刻を反映）
+  if (gasUrl) fetchAllFromGAS();
 }
 
 function doLogout() {
@@ -2494,8 +2494,8 @@ if (savedSession && getUserNames().includes(savedSession)) {
 renderAll();
 updateSyncIndicator('idle');
 
-// 管理者でセッション復元された場合もGASから最新データを取得
-if (currentUser && isAdmin(currentUser) && gasUrl) fetchAllFromGAS();
+// セッション復元時も全員GASから最新データを取得（別デバイスでの打刻を反映）
+if (currentUser && gasUrl) fetchAllFromGAS();
 
 setInterval(()=>{
   if (!currentUser) return;

@@ -799,7 +799,7 @@ function syncRecordToGAS(name, dateKey) {
   updateSyncIndicator('syncing');
   fetch(gasUrl, {
     method: 'POST',
-    body: JSON.stringify({ action:'upsertRecord', name, date:dateKey, pairs:rec.pairs||[], ot:rec.ot||null, early:rec.early||null, paid:rec.paid||null, holiday:rec.holiday||null })
+    body: JSON.stringify({ action:'upsertRecord', name, date:dateKey, pairs:rec.pairs||[], ot:rec.ot||null, early:rec.early||null, paid:rec.paid||null, holiday:rec.holiday||null, updatedAt:rec.updatedAt||0 })
   })
   .then(r => r.json())
   .then(j => {
@@ -831,13 +831,16 @@ function fetchAllFromGAS(onDone) {
       if (!data.records[name]) data.records[name] = {};
       Object.entries(recs).forEach(([dk, rec]) => {
         if (name === currentUser && dk === today) {
-          if (!data.records[name][dk]) data.records[name][dk] = { pairs:[], ot:null };
-          const localPairs = data.records[name][dk].pairs || [];
-          if (localPairs.length === 0) {
-            // このデバイスにまだ打刻なし → GASのデータをそのまま使用（別デバイスで打刻した場合）
+          if (!data.records[name][dk]) data.records[name][dk] = { pairs:[], ot:null, updatedAt:0 };
+          const localRec       = data.records[name][dk];
+          const localPairs     = localRec.pairs || [];
+          const localUpdatedAt = localRec.updatedAt || 0;
+          const gasUpdatedAt   = rec.updatedAt   || 0;
+          if (localPairs.length === 0 || gasUpdatedAt > localUpdatedAt) {
+            // このデバイスに打刻なし、または GAS の方が新しい（別デバイスで修正された）→ GAS を使用
             data.records[name][dk] = rec;
           } else {
-            // このデバイスに打刻あり → 打刻はローカル優先、申請ステータスはGAS優先
+            // このデバイスの打刻が最新 → 打刻はローカル優先、申請ステータスはGAS優先
             if (rec.ot)    data.records[name][dk].ot      = rec.ot;
             if (rec.early) data.records[name][dk].early   = rec.early;
             if (Array.isArray(rec.paid)    && rec.paid.length    > 0) data.records[name][dk].paid    = rec.paid;
@@ -946,16 +949,17 @@ function hideModal(id){ document.getElementById(id).classList.remove('show'); }
 // 旧フォーマット: { in:ts, out:ts, ot:null } → 自動変換
 
 function migrateRec(rec) {
-  if (!rec) return { pairs:[], ot:null, early:null, paid:[], holiday:[] };
+  if (!rec) return { pairs:[], ot:null, early:null, paid:[], holiday:[], updatedAt:0 };
   // 旧形式（pairs なし）を変換
   if (!rec.pairs) {
     const pair = { in: rec.in||null, out: rec.out||null };
     rec = { pairs: pair.in ? [pair] : [], ot: rec.ot||null };
   }
   // 新フィールドが未定義なら補完
-  if (!('early'   in rec)) rec.early   = null;
-  if (!('paid'    in rec)) rec.paid    = [];
-  if (!('holiday' in rec)) rec.holiday = [];
+  if (!('early'     in rec)) rec.early     = null;
+  if (!('paid'      in rec)) rec.paid      = [];
+  if (!('holiday'   in rec)) rec.holiday   = [];
+  if (!('updatedAt' in rec)) rec.updatedAt = 0;
   // 旧形式（単体オブジェクト）→配列に変換
   if (rec.paid && !Array.isArray(rec.paid)) rec.paid = [rec.paid];
   if (rec.holiday && !Array.isArray(rec.holiday)) rec.holiday = [rec.holiday];
@@ -1215,6 +1219,7 @@ function clockIn() {
   const rec = getTodayRec();
   if (isCurrentlyWorking(rec)) { showToast('すでに出勤中です'); return; }
   rec.pairs.push({ in: Date.now(), out: null });
+  rec.updatedAt = Date.now();
   saveData(); renderAll();
   syncRecordToGAS(currentUser, todayKey());
   showToast('☀️ 出勤しました！ '+fmtTime(rec.pairs[rec.pairs.length-1].in));
@@ -1229,6 +1234,7 @@ function clockOut() {
   const lastPair = rec.pairs[rec.pairs.length-1];
   lastPair.out = Date.now();
   const min = Math.floor((lastPair.out - lastPair.in)/60000);
+  rec.updatedAt = Date.now();
   saveData(); renderAll();
   syncRecordToGAS(currentUser, todayKey());
   showToast('🌙 退勤しました！ '+fmtMin(min));
@@ -1616,6 +1622,7 @@ function saveEditTime() {
     newPairs.push({ in: inTs, out: outTs });
   });
   rec.pairs = newPairs;
+  rec.updatedAt = Date.now();
   saveData(); renderAll(); hideModal('modalEdit');
   syncRecordToGAS(name, dateKey);
   showToast('✅ '+name+'（'+dateKey+'）の打刻を修正しました');

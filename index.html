@@ -756,8 +756,12 @@ const APP_TYPES = [
 //  データ管理
 // ============================================================
 function loadData() {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || { users:[], records:{} }; }
-  catch { return { users:[], records:{} }; }
+  try {
+    const d = JSON.parse(localStorage.getItem(STORAGE_KEY)) || { users:[], records:{}, passwords:{} };
+    if (!d.passwords) d.passwords = {};
+    return d;
+  }
+  catch { return { users:[], records:{}, passwords:{} }; }
 }
 function saveData() { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
 function loadSession() {
@@ -851,6 +855,11 @@ function fetchAllFromGAS(onDone) {
         data.records[name][dk] = rec;
       });
     });
+    // パスワードをGASからマージ（クラウドが正）
+    if (json.passwords && typeof json.passwords === 'object') {
+      if (!data.passwords) data.passwords = {};
+      Object.assign(data.passwords, json.passwords);
+    }
     saveData(); renderAll();
     updateSyncIndicator('ok');
     showToast('☁️ データを更新しました');
@@ -1017,6 +1026,9 @@ function isAdmin(name) { return getUserRole(name) === 'admin'; }
 //  パスワード管理
 // ============================================================
 function getUserPassword(name) {
+  // 新形式：クラウド同期パスワード（優先）
+  if (data.passwords && data.passwords[name]) return data.passwords[name];
+  // 旧形式：data.users 内のパスワード（後方互換）
   const u = data.users.find(u => (typeof u==='string'?u:u.name) === name);
   return u?.password || '';
 }
@@ -1044,15 +1056,31 @@ function showSetPasswordModal(name) {
 
 function savePassword() {
   const pw = document.getElementById('setPasswordInput').value;
+  if (!data.passwords) data.passwords = {};
+  // 新形式（クラウド同期用）に保存
+  if (pw) { data.passwords[setPasswordTargetName] = pw; }
+  else     { delete data.passwords[setPasswordTargetName]; }
+  // 旧形式（後方互換）にも保存
   const u = data.users.find(u => (typeof u==='string'?u:u.name) === setPasswordTargetName);
-  if (u) {
-    if (pw) { u.password = pw; }
-    else { delete u.password; }
-    saveData();
+  if (u && typeof u === 'object') {
+    if (pw) u.password = pw; else delete u.password;
   }
+  saveData();
+  syncPasswordsToGAS();
   hideModal('modalSetPassword');
   renderMemberList();
-  showToast(pw ? '🔑 '+setPasswordTargetName+' のパスワードを設定しました' : '🔓 '+setPasswordTargetName+' のパスワードを解除しました');
+  showToast(pw ? '🔑 '+setPasswordTargetName+' のパスワードを設定しました（クラウドに保存中）' : '🔓 '+setPasswordTargetName+' のパスワードを解除しました');
+}
+
+function syncPasswordsToGAS() {
+  if (!gasUrl) return;
+  fetch(gasUrl, {
+    method: 'POST',
+    body: JSON.stringify({ action:'syncPasswords', passwords: data.passwords || {} })
+  })
+  .then(r => r.json())
+  .then(j => { if (!j.ok) showToast('⚠️ パスワード同期失敗: '+(j.error||'')); })
+  .catch(() => showToast('⚠️ パスワード同期の通信エラー'));
 }
 
 // ============================================================

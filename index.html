@@ -1397,15 +1397,24 @@ function showOtExtModal() {
   const rec = getTodayRec();
   document.getElementById('otExtCurrentEnd').textContent = rec.ot.plannedEnd;
   // 現在の承認時刻より後の選択肢を生成
+  const currentEnd = rec.ot.plannedEnd;
   const sel = document.getElementById('otExtTime');
   sel.innerHTML = '';
-  buildOtTimes().forEach(t => {
-    if (t > rec.ot.plannedEnd) {
-      const opt = document.createElement('option');
-      opt.value = t; opt.textContent = t;
-      sel.appendChild(opt);
-    }
-  });
+  for (let h = 17; h <= 24; h++) {
+    const mins = h === 17 ? [30,45] : h === 24 ? [0] : [0,15,30,45];
+    mins.forEach(m => {
+      const label = String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
+      if (label > currentEnd) {  // 現在の承認時刻より後だけ表示
+        const opt = document.createElement('option');
+        opt.value = label; opt.textContent = label;
+        sel.appendChild(opt);
+      }
+    });
+  }
+  if (sel.options.length === 0) {
+    showToast('延長できる時刻がありません（最大 24:00 まで）');
+    return;
+  }
   document.getElementById('otExtReason').value = '';
   document.getElementById('modalOtExt').classList.add('show');
 }

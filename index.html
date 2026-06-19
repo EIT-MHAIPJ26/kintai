@@ -556,6 +556,24 @@
   </div>
 </div>
 
+<!-- 残業延長申請モーダル -->
+<div class="modal-overlay" id="modalOtExt" onclick="closeModalBg(event,'modalOtExt')">
+  <div class="modal">
+    <h3>⏰ 残業延長申請</h3>
+    <div style="background:#F2F2F7;border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:13px;">
+      現在の承認時刻：<strong id="otExtCurrentEnd" style="color:var(--purple);">--:--</strong>
+    </div>
+    <label>新しい残業終了時刻</label>
+    <select id="otExtTime"></select>
+    <label>延長理由</label>
+    <textarea id="otExtReason" placeholder="延長の理由を入力してください"></textarea>
+    <div class="modal-buttons">
+      <button class="btn-cancel" onclick="hideModal('modalOtExt')">キャンセル</button>
+      <button class="btn-confirm purple" onclick="submitOtExt()">延長申請する</button>
+    </div>
+  </div>
+</div>
+
 <!-- 早出申請モーダル -->
 <div class="modal-overlay" id="modalEarly" onclick="closeModalBg(event,'modalEarly')">
   <div class="modal">
@@ -1338,8 +1356,14 @@ function showOtModal() {
   if (!currentUser) return;
   const rec = getTodayRec();
   if (rec.ot) {
-    if (rec.ot.status==='pending')  { showToast('申請中です。承認をお待ちください'); return; }
-    if (rec.ot.status==='approved') { showToast('承認済みです'); return; }
+    if (rec.ot.status === 'pending') { showToast('申請中です。承認をお待ちください'); return; }
+    if (rec.ot.status === 'approved') {
+      // 承認済み → 延長申請へ
+      const ext = rec.ot.extension;
+      if (ext?.status === 'pending') { showToast('延長申請中です。承認をお待ちください'); return; }
+      showOtExtModal();
+      return;
+    }
   }
   document.getElementById('otReason').value = '';
   if (rec.ot?.plannedEnd) document.getElementById('otTime').value = rec.ot.plannedEnd;
@@ -1366,6 +1390,60 @@ function cancelOt() {
   saveData(); renderAll();
   syncRecordToGAS(currentUser, todayKey());
   showToast('🗑️ 残業申請を取り消しました');
+}
+
+// ── 残業延長申請 ──────────────────────────────────────────────
+function showOtExtModal() {
+  const rec = getTodayRec();
+  document.getElementById('otExtCurrentEnd').textContent = rec.ot.plannedEnd;
+  // 現在の承認時刻より後の選択肢を生成
+  const sel = document.getElementById('otExtTime');
+  sel.innerHTML = '';
+  buildOtTimes().forEach(t => {
+    if (t > rec.ot.plannedEnd) {
+      const opt = document.createElement('option');
+      opt.value = t; opt.textContent = t;
+      sel.appendChild(opt);
+    }
+  });
+  document.getElementById('otExtReason').value = '';
+  document.getElementById('modalOtExt').classList.add('show');
+}
+
+function submitOtExt() {
+  const plannedEnd = document.getElementById('otExtTime').value;
+  const reason = document.getElementById('otExtReason').value.trim();
+  if (!plannedEnd) { showToast('新しい終了時刻を選択してください'); return; }
+  if (!reason) { showToast('延長理由を入力してください'); return; }
+  const rec = getTodayRec();
+  if (!rec.ot || rec.ot.status !== 'approved') { showToast('承認済みの残業申請がありません'); return; }
+  rec.ot.extension = { plannedEnd, reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
+  saveData(); renderAll(); hideModal('modalOtExt');
+  syncRecordToGAS(currentUser, todayKey());
+  showToast('📋 延長申請を送信しました（'+plannedEnd+'まで）');
+}
+
+function cancelOtExt() {
+  if (!currentUser) return;
+  const rec = getTodayRec();
+  if (!rec.ot?.extension || rec.ot.extension.status === 'rejected') { showToast('取り消しできる延長申請がありません'); return; }
+  if (!confirm('延長申請を取り消しますか？')) return;
+  delete rec.ot.extension;
+  saveData(); renderAll();
+  syncRecordToGAS(currentUser, todayKey());
+  showToast('🗑️ 延長申請を取り消しました');
+}
+
+function approveOtExt(userName, dateKey) {
+  const rec = getRecByKey(userName, dateKey);
+  if (!rec?.ot?.extension) return;
+  rec.ot.plannedEnd = rec.ot.extension.plannedEnd;  // 本体の予定終了時刻を更新
+  rec.ot.extension.status = 'approved';
+  rec.ot.extension.approvedBy = currentUser;
+  rec.ot.extension.approvedAt = Date.now();
+  saveData(); renderAll();
+  syncRecordToGAS(userName, dateKey);
+  showToast('✅ '+userName+'の延長申請を承認しました（'+rec.ot.plannedEnd+'まで）');
 }
 
 // 有給・休日出勤の取り消し（配列型）
@@ -1404,7 +1482,13 @@ function confirmReject() {
   const userName = parts[0], dateKey = parts[1], type = parts[2] || 'ot', idxStr = parts[3];
   const rec      = getRecByKey(userName, dateKey);
   const comment  = document.getElementById('rejectComment').value.trim();
-  if (idxStr !== undefined && idxStr !== '') {
+  if (type === 'otExt') {
+    // 延長申請の却下
+    if (rec?.ot?.extension) {
+      rec.ot.extension.status='rejected'; rec.ot.extension.approvedBy=currentUser;
+      rec.ot.extension.approvedAt=Date.now(); rec.ot.extension.comment=comment;
+    }
+  } else if (idxStr !== undefined && idxStr !== '') {
     const i = parseInt(idxStr);
     if (Array.isArray(rec?.[type]) && rec[type][i]) {
       rec[type][i].status='rejected'; rec[type][i].approvedBy=currentUser;
@@ -1867,17 +1951,25 @@ function renderStatus() {
     setStatus('in','勤務中');
     document.getElementById('btnIn').disabled  = true;
     document.getElementById('btnOut').disabled = false;
-    const otSt = rec.ot?.status;
-    document.getElementById('btnOt').disabled  = (otSt==='pending'||otSt==='approved');
+    const otSt  = rec.ot?.status;
+    const extSt = rec.ot?.extension?.status;
+    const otDisabled = otSt === 'pending' || (otSt === 'approved' && extSt === 'pending');
+    document.getElementById('btnOt').disabled = otDisabled;
     document.getElementById('btnOtText').textContent =
-      otSt==='pending'?'申請中…':otSt==='approved'?'残業承認済み':'残業申請';
+      otSt==='pending' ? '申請中…' :
+      otSt==='approved' && extSt==='pending' ? '延長申請中…' :
+      otSt==='approved' ? '延長申請' : '残業申請';
   } else {
     setStatus('out','退勤済み');
     document.getElementById('btnIn').disabled  = false;  // 再出勤可能
     document.getElementById('btnOut').disabled = true;
-    document.getElementById('btnOt').disabled  = rec.ot?.status==='pending'||rec.ot?.status==='approved';
+    const otSt2  = rec.ot?.status;
+    const extSt2 = rec.ot?.extension?.status;
+    document.getElementById('btnOt').disabled = otSt2==='pending' || (otSt2==='approved' && extSt2==='pending');
     document.getElementById('btnOtText').textContent =
-      rec.ot?.status==='pending'?'申請中…':rec.ot?.status==='approved'?'残業承認済み':'残業申請';
+      otSt2==='pending' ? '申請中…' :
+      otSt2==='approved' && extSt2==='pending' ? '延長申請中…' :
+      otSt2==='approved' ? '延長申請' : '残業申請';
   }
 
   // 残業予定
@@ -1944,13 +2036,28 @@ function renderStatus() {
     const labels = {pending:'承認待ち', approved:'承認済み', rejected:'却下'};
     let txt = icons[status]+' 残業申請 '+labels[status]+' ／ '+plannedEnd+'まで';
     if (status==='rejected' && comment) txt += '（'+comment+'）';
-    // 承認待ち・承認済みは取り消し可能（却下済みは不要）
     const cancelBtn = status!=='rejected'
       ? `<button onclick="cancelOt()" style="margin-left:8px;font-size:11px;padding:3px 9px;border:1px solid currentColor;border-radius:6px;background:transparent;color:inherit;cursor:pointer;opacity:.8;">取り消し</button>`
       : '';
     otBar.className = 'ot-status-bar '+status;
     otBar.innerHTML = txt + cancelBtn;
     otBar.style.display = '';
+    // 延長申請が存在する場合は追加で表示
+    const ext = rec.ot.extension;
+    if (ext) {
+      const extIcons  = {pending:'⏳', approved:'✅', rejected:'🚫'};
+      const extLabels = {pending:'承認待ち', approved:'承認済み', rejected:'却下'};
+      let extTxt = extIcons[ext.status]+' 延長申請 '+extLabels[ext.status]+' ／ '+ext.plannedEnd+'まで';
+      if (ext.status==='rejected' && ext.comment) extTxt += '（'+ext.comment+'）';
+      const extCancelBtn = ext.status==='pending'
+        ? `<button onclick="cancelOtExt()" style="margin-left:8px;font-size:11px;padding:3px 9px;border:1px solid currentColor;border-radius:6px;background:transparent;color:inherit;cursor:pointer;opacity:.8;">取り消し</button>`
+        : '';
+      const extBar = document.createElement('div');
+      extBar.className = 'ot-status-bar '+(ext.status==='approved'?'approved':ext.status==='rejected'?'rejected':'pending');
+      extBar.style.marginTop = '6px';
+      extBar.innerHTML = extTxt + extCancelBtn;
+      otBar.after(extBar);
+    }
   } else {
     otBar.style.display = 'none';
   }
@@ -2338,6 +2445,10 @@ function renderApprovalList() {
           items.push({name,dateKey,rec,type:t.key,typeInfo:t,app:val,idx:null});
         }
       });
+      // 残業延長申請（承認済みOTの中の extension が pending）
+      if(rec.ot?.status==='approved' && rec.ot?.extension?.status==='pending'){
+        items.push({name,dateKey,rec,type:'otExt',typeInfo:{key:'otExt',icon:'⏰',label:'残業延長申請',barClass:'pending',color:'var(--purple)'},app:rec.ot.extension,idx:null});
+      }
     });
   });
   items.sort((a,b)=>b.dateKey.localeCompare(a.dateKey));
@@ -2350,6 +2461,7 @@ function renderApprovalList() {
     // 申請内容テキスト
     let detailHtml='';
     if(type==='ot')           detailHtml=`${typeInfo.icon} 残業予定 <strong>${app.plannedEnd}</strong>まで`;
+    else if(type==='otExt')   detailHtml=`${typeInfo.icon} <strong>${rec.ot.plannedEnd}→${app.plannedEnd}</strong>まで延長`;
     else if(type==='early')   detailHtml=`${typeInfo.icon} 早出 <strong>${app.startTime}〜8:00</strong>`;
     else if(type==='paid')    detailHtml=`${typeInfo.icon} 有給 <strong>${app.startTime}〜${app.endTime}</strong>`;
     else if(type==='holiday') detailHtml=`${typeInfo.icon} 休日出勤 <strong>${app.workDate}</strong> ${app.startTime||''}〜${app.endTime||''} ${app.wantComp?` 振替希望：${app.compDate}${app.compTime?' '+app.compTime:''}`:'（振替なし）'}`;
@@ -2358,10 +2470,15 @@ function renderApprovalList() {
     const idxArg = idx !== null ? `,${idx}` : '';
     const actionHtml = isSelf
       ? `<div class="approval-done" style="background:#F2F2F7;color:var(--subtext);">⏳ 他の管理者の承認待ちです</div>`
-      : `<div class="approval-buttons">
-          <button class="btn-approve" onclick="approveApplication('${name}','${dateKey}','${type}'${idxArg})">✅ 承認</button>
-          <button class="btn-reject"  onclick="showRejectModal('${name}','${dateKey}','${type}'${idxArg})">🚫 却下</button>
-        </div>`;
+      : type==='otExt'
+        ? `<div class="approval-buttons">
+            <button class="btn-approve" onclick="approveOtExt('${name}','${dateKey}')">✅ 承認</button>
+            <button class="btn-reject"  onclick="showRejectModal('${name}','${dateKey}','otExt')">🚫 却下</button>
+          </div>`
+        : `<div class="approval-buttons">
+            <button class="btn-approve" onclick="approveApplication('${name}','${dateKey}','${type}'${idxArg})">✅ 承認</button>
+            <button class="btn-reject"  onclick="showRejectModal('${name}','${dateKey}','${type}'${idxArg})">🚫 却下</button>
+          </div>`;
 
     const item=document.createElement('div');
     item.className='approval-item';

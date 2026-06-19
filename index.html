@@ -390,6 +390,7 @@
     </div>
     <div class="pairs-list" id="pairsList" style="display:none"></div>
     <div id="otStatusBar" style="display:none"></div>
+    <div id="otExtStatusBar" style="display:none"></div>
     <div id="earlyStatusBar" style="display:none"></div>
     <div id="paidStatusBar" style="display:none"></div>
     <div id="holidayStatusBar" style="display:none"></div>
@@ -1914,7 +1915,7 @@ function renderStatus() {
 
   // 申請ボタン・ステータスバーの初期化ヘルパー
   function hideAllAppBars() {
-    ['otStatusBar','earlyStatusBar','paidStatusBar','holidayStatusBar'].forEach(id=>{
+    ['otStatusBar','otExtStatusBar','earlyStatusBar','paidStatusBar','holidayStatusBar'].forEach(id=>{
       document.getElementById(id).style.display='none';
     });
   }
@@ -2051,7 +2052,8 @@ function renderStatus() {
     otBar.className = 'ot-status-bar '+status;
     otBar.innerHTML = txt + cancelBtn;
     otBar.style.display = '';
-    // 延長申請が存在する場合は追加で表示
+    // 延長申請が存在する場合は専用バーに表示
+    const extBar = document.getElementById('otExtStatusBar');
     const ext = rec.ot.extension;
     if (ext) {
       const extIcons  = {pending:'⏳', approved:'✅', rejected:'🚫'};
@@ -2061,11 +2063,12 @@ function renderStatus() {
       const extCancelBtn = ext.status==='pending'
         ? `<button onclick="cancelOtExt()" style="margin-left:8px;font-size:11px;padding:3px 9px;border:1px solid currentColor;border-radius:6px;background:transparent;color:inherit;cursor:pointer;opacity:.8;">取り消し</button>`
         : '';
-      const extBar = document.createElement('div');
       extBar.className = 'ot-status-bar '+(ext.status==='approved'?'approved':ext.status==='rejected'?'rejected':'pending');
       extBar.style.marginTop = '6px';
       extBar.innerHTML = extTxt + extCancelBtn;
-      otBar.after(extBar);
+      extBar.style.display = '';
+    } else {
+      extBar.style.display = 'none';
     }
   } else {
     otBar.style.display = 'none';

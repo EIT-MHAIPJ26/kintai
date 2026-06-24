@@ -1507,6 +1507,28 @@ function cancelApp(type, idx) {
   showToast('🗑️ '+typeName+'を取り消しました');
 }
 
+// 申請状況タブからの取り消し（日付指定・全タイプ対応）
+function cancelAppByDate(type, dateKey, idx) {
+  if (!currentUser) return;
+  const rec = getRecByKey(currentUser, dateKey);
+  const typeName = APP_TYPES.find(t=>t.key===type)?.label || type;
+  if (idx !== undefined && idx !== null) {
+    // 配列型（有給・休日出勤）
+    if (!Array.isArray(rec[type]) || !rec[type][idx]) { showToast('取り消しできる申請がありません'); return; }
+    if (rec[type][idx].status === 'rejected') { showToast('取り消しできる申請がありません'); return; }
+    if (!confirm(typeName+'を取り消しますか？')) return;
+    rec[type].splice(idx, 1);
+  } else {
+    // 単体型（残業・早出）
+    if (!rec[type] || rec[type].status === 'rejected') { showToast('取り消しできる申請がありません'); return; }
+    if (!confirm(typeName+'を取り消しますか？')) return;
+    rec[type] = null;
+  }
+  saveData(); renderAll();
+  syncRecordToGAS(currentUser, dateKey);
+  showToast('🗑️ '+typeName+'を取り消しました');
+}
+
 // 早出申請の取り消し（単体型）
 function cancelEarly() {
   if (!currentUser) return;
@@ -2323,14 +2345,15 @@ function renderMyApplications() {
     APP_TYPES.forEach(t => {
       const val = rec[t.key];
       const apps = Array.isArray(val) ? val : (val ? [val] : []);
-      apps.forEach(app => {
+      apps.forEach((app, idx) => {
         if (!app) return;
         let detail = '';
         if (t.key==='ot')           detail = '残業予定 '+app.plannedEnd+'まで';
         else if (t.key==='early')   detail = '早出 '+app.startTime+'〜8:00';
         else if (t.key==='paid')    detail = '有給 '+app.startTime+'〜'+app.endTime;
         else if (t.key==='holiday') detail = '休日出勤 '+app.workDate+' '+(app.startTime||'')+'〜'+(app.endTime||'')+(app.wantComp?' 振替希望':'');
-        items.push({ dateKey, dateStr, type:t.key, typeInfo:t, app, detail });
+        const appIdx = Array.isArray(val) ? idx : null;
+        items.push({ dateKey, dateStr, type:t.key, typeInfo:t, app, detail, appIdx });
       });
     });
   });
@@ -2355,11 +2378,15 @@ function renderMyApplications() {
   const stIcons  = { pending:'⏳', approved:'✅', rejected:'🚫' };
   const stLabels = { pending:'承認待ち', approved:'承認済み', rejected:'却下' };
 
-  items.forEach(({ dateStr, typeInfo, app, detail }) => {
+  items.forEach(({ dateKey, dateStr, typeInfo, app, detail, appIdx }) => {
     const approverTxt = app.approvedBy
       ? `<span class="myapp-approver">（${app.approvedBy}）</span>` : '';
     const commentTxt = app.status==='rejected' && app.comment
       ? `<div class="myapp-reason">💬 ${app.comment}</div>` : '';
+    const idxArg = appIdx !== null ? `,${appIdx}` : '';
+    const cancelBtn = app.status === 'pending'
+      ? `<button onclick="cancelAppByDate('${typeInfo.key}','${dateKey}'${idxArg})" style="margin-left:8px;font-size:11px;padding:3px 9px;border:1px solid var(--danger);border-radius:6px;background:transparent;color:var(--danger);cursor:pointer;">取り消し</button>`
+      : '';
 
     const item = document.createElement('div');
     item.className = 'myapp-item';
@@ -2374,6 +2401,7 @@ function renderMyApplications() {
       <div>
         <span class="myapp-status ${app.status}">${stIcons[app.status]} ${stLabels[app.status]}</span>
         ${approverTxt}
+        ${cancelBtn}
       </div>`;
     list.appendChild(item);
   });

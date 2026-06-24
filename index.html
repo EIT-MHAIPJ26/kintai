@@ -2538,33 +2538,32 @@ function renderApprovalList() {
         const val=rec[t.key];
         if(Array.isArray(val)){
           val.forEach((app,idx)=>{
-            if(app?.status==='pending'||app?.status==='approved')
-              items.push({name,dateKey,rec,type:t.key,typeInfo:t,app,idx});
+            if(app?.status) items.push({name,dateKey,rec,type:t.key,typeInfo:t,app,idx});
           });
-        } else if(val?.status==='pending'||val?.status==='approved'){
+        } else if(val?.status){
           items.push({name,dateKey,rec,type:t.key,typeInfo:t,app:val,idx:null});
         }
       });
-      // 残業延長申請（承認済みOTの中の extension が pending/approved）
-      if(rec.ot?.status==='approved' && (rec.ot?.extension?.status==='pending'||rec.ot?.extension?.status==='approved')){
+      // 残業延長申請
+      if(rec.ot?.extension?.status){
         items.push({name,dateKey,rec,type:'otExt',typeInfo:{key:'otExt',icon:'⏰',label:'残業延長申請',barClass:'pending',color:'var(--purple)'},app:rec.ot.extension,idx:null});
       }
     });
   });
-  // 承認待ちを先に、次に承認済みを日付新しい順
+  // 承認待ち→承認済み→却下の順、同ステータス内は日付新しい順
   items.sort((a,b)=>{
-    const ord={pending:0,approved:1};
-    return (ord[a.app.status]??2)-(ord[b.app.status]??2)||b.dateKey.localeCompare(a.dateKey);
+    const ord={pending:0,approved:1,rejected:2};
+    return (ord[a.app.status]??3)-(ord[b.app.status]??3)||b.dateKey.localeCompare(a.dateKey);
   });
   if(items.length===0){list.innerHTML='<div class="empty-state">📭 申請はありません</div>';return;}
 
+  const secLabels={pending:'⏳ 承認待ち',approved:'✅ 承認済み（取り消し可）',rejected:'🚫 却下済み（削除可）'};
   let lastStatus='';
   items.forEach(({name,dateKey,rec,type,typeInfo,app,idx})=>{
-    // セクション見出し
     if(app.status!==lastStatus){
       const secDiv=document.createElement('div');
-      secDiv.style.cssText='font-size:12px;font-weight:700;color:var(--subtext);margin:12px 0 6px;padding-left:4px;';
-      secDiv.textContent=app.status==='pending'?'⏳ 承認待ち':'✅ 承認済み（管理者取り消し可）';
+      secDiv.style.cssText='font-size:12px;font-weight:700;color:var(--subtext);margin:12px 0 6px;padding-left:4px;border-top:1px solid var(--border);padding-top:10px;';
+      secDiv.textContent=secLabels[app.status]||app.status;
       list.appendChild(secDiv);
       lastStatus=app.status;
     }
@@ -2574,35 +2573,39 @@ function renderApprovalList() {
 
     let detailHtml='';
     if(type==='ot')           detailHtml=`${typeInfo.icon} 残業予定 <strong>${app.plannedEnd}</strong>まで`;
-    else if(type==='otExt')   detailHtml=`${typeInfo.icon} <strong>${rec.ot.plannedEnd}→${app.plannedEnd}</strong>まで延長`;
+    else if(type==='otExt')   detailHtml=`${typeInfo.icon} <strong>${rec.ot?.plannedEnd}→${app.plannedEnd}</strong>まで延長`;
     else if(type==='early')   detailHtml=`${typeInfo.icon} 早出 <strong>${app.startTime}〜8:00</strong>`;
     else if(type==='paid')    detailHtml=`${typeInfo.icon} 有給 <strong>${app.startTime}〜${app.endTime}</strong>`;
     else if(type==='holiday') detailHtml=`${typeInfo.icon} 休日出勤 <strong>${app.workDate}</strong> ${app.startTime||''}〜${app.endTime||''} ${app.wantComp?` 振替希望：${app.compDate}${app.compTime?' '+app.compTime:''}`:'（振替なし）'}`;
 
     const isSelf = name === currentUser;
     const idxArg = idx !== null ? `,${idx}` : '';
+    const deleteBtn = `<button style="padding:6px 14px;border-radius:8px;border:1px solid var(--danger);font-size:12px;font-weight:700;cursor:pointer;background:transparent;color:var(--danger);margin-left:6px;" onclick="revokeApplication('${name}','${dateKey}','${type}'${idxArg})">🗑️ 削除</button>`;
 
     let actionHtml='';
     if(app.status==='approved'){
-      // 承認済み→管理者取り消しボタン
       actionHtml=`<div class="approval-buttons">
-        <button style="padding:8px 18px;border-radius:10px;border:none;font-weight:700;font-size:13px;cursor:pointer;background:#F2F2F7;color:var(--danger);" onclick="revokeApplication('${name}','${dateKey}','${type}'${idxArg})">🗑️ 承認取り消し</button>
+        <button style="padding:8px 18px;border-radius:10px;border:none;font-weight:700;font-size:13px;cursor:pointer;background:#F2F2F7;color:var(--danger);" onclick="revokeApplication('${name}','${dateKey}','${type}'${idxArg})">🗑️ 承認取り消し・削除</button>
       </div>`;
+    } else if(app.status==='rejected'){
+      actionHtml=`<div class="approval-buttons">${deleteBtn}</div>`;
     } else if(isSelf){
       actionHtml=`<div class="approval-done" style="background:#F2F2F7;color:var(--subtext);">⏳ 他の管理者の承認待ちです</div>`;
     } else if(type==='otExt'){
       actionHtml=`<div class="approval-buttons">
         <button class="btn-approve" onclick="approveOtExt('${name}','${dateKey}')">✅ 承認</button>
         <button class="btn-reject"  onclick="showRejectModal('${name}','${dateKey}','otExt')">🚫 却下</button>
+        ${deleteBtn}
       </div>`;
     } else {
       actionHtml=`<div class="approval-buttons">
         <button class="btn-approve" onclick="approveApplication('${name}','${dateKey}','${type}'${idxArg})">✅ 承認</button>
         <button class="btn-reject"  onclick="showRejectModal('${name}','${dateKey}','${type}'${idxArg})">🚫 却下</button>
+        ${deleteBtn}
       </div>`;
     }
 
-    const approverTxt = app.approvedBy ? `<span style="font-size:11px;color:var(--subtext);">（承認：${app.approvedBy}）</span>` : '';
+    const approverTxt = app.approvedBy ? `<span style="font-size:11px;color:var(--subtext);">（${app.approvedBy}）</span>` : '';
     const item=document.createElement('div');
     item.className='approval-item';
     item.innerHTML=`

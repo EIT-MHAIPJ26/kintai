@@ -494,7 +494,7 @@
   <!-- 承認管理 -->
   <div id="view-approval" style="display:none">
     <div class="records-card">
-      <div class="card-title">✅ 残業申請 承認管理</div>
+      <div class="card-title">✅ 申請 承認管理（早出・残業・有給・休日出勤）</div>
       <div id="approvalList"></div>
     </div>
   </div>
@@ -721,9 +721,14 @@
     <label>GAS ウェブアプリURL</label>
     <input type="url" id="gasUrlInput" placeholder="https://script.google.com/macros/s/..." style="font-size:12px;"/>
     <button id="testSyncBtn" onclick="testSyncConnection()" style="width:100%;padding:9px;margin-top:8px;background:white;border:1.5px solid var(--blue);color:var(--blue);border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;">接続テスト</button>
+    <hr style="margin:14px 0;border:none;border-top:1px solid var(--border);">
+    <label style="font-size:12px;font-weight:700;color:var(--text);">📧 申請通知メール（管理者のメールアドレス）</label>
+    <div style="font-size:11px;color:var(--subtext);margin-bottom:6px;">申請が届いたときにGmailで通知します。複数は「,」で区切ってください。</div>
+    <input type="email" id="notifEmailInput" placeholder="admin@example.com" style="font-size:12px;" multiple/>
+    <button onclick="saveNotifEmail()" style="width:100%;padding:9px;margin-top:6px;background:white;border:1.5px solid var(--green);color:var(--green);border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;">📧 通知メールを保存</button>
     <div class="modal-buttons">
       <button class="btn-cancel" onclick="hideModal('modalSync')">キャンセル</button>
-      <button class="btn-confirm blue" onclick="saveSyncSettings()">保存する</button>
+      <button class="btn-confirm blue" onclick="saveSyncSettings()">URLを保存する</button>
     </div>
   </div>
 </div>
@@ -906,7 +911,37 @@ function manualFetch() {
 // 同期設定モーダル
 function showSyncSettings() {
   document.getElementById('gasUrlInput').value = gasUrl;
+  document.getElementById('notifEmailInput').value = localStorage.getItem('kintai_notif_emails') || '';
   document.getElementById('modalSync').classList.add('show');
+}
+
+function saveNotifEmail() {
+  const emails = document.getElementById('notifEmailInput').value.trim();
+  if (!gasUrl) { showToast('先にGAS URLを設定してください'); return; }
+  localStorage.setItem('kintai_notif_emails', emails);
+  fetch(gasUrl, {
+    method: 'POST',
+    body: JSON.stringify({ action: 'setNotifEmails', emails })
+  })
+  .then(r => r.json())
+  .then(j => showToast(j.ok ? '📧 通知メールを保存しました' : '⚠️ 保存失敗: '+(j.error||'')))
+  .catch(() => showToast('⚠️ 通信エラー'));
+}
+
+// 申請送信時に管理者へメール通知
+function notifyAdminsViaGAS(type, detail, date) {
+  if (!gasUrl) return;
+  const typeNames = { ot:'残業申請', otExt:'残業延長申請', early:'早出申請', paid:'有給申請', holiday:'休日出勤申請' };
+  fetch(gasUrl, {
+    method: 'POST',
+    body: JSON.stringify({
+      action: 'notifyAdmins',
+      name: currentUser,
+      typeName: typeNames[type] || type,
+      detail,
+      date: date || todayKey()
+    })
+  }).catch(() => {});  // 通知失敗しても申請処理は止めない
 }
 
 function saveSyncSettings() {
@@ -1379,6 +1414,7 @@ function submitOt() {
   rec.ot = { plannedEnd, reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
   saveData(); renderAll(); hideModal('modalOt');
   syncRecordToGAS(currentUser, todayKey());
+  notifyAdminsViaGAS('ot', plannedEnd+'まで');
   showToast('📋 残業申請を送信しました（'+plannedEnd+'まで）');
 }
 
@@ -1430,6 +1466,7 @@ function submitOtExt() {
   rec.ot.extension = { plannedEnd, reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
   saveData(); renderAll(); hideModal('modalOtExt');
   syncRecordToGAS(currentUser, todayKey());
+  notifyAdminsViaGAS('otExt', rec.ot.plannedEnd+'→'+plannedEnd+'まで延長');
   showToast('📋 延長申請を送信しました（'+plannedEnd+'まで）');
 }
 
@@ -1468,6 +1505,18 @@ function cancelApp(type, idx) {
   saveData(); renderAll();
   syncRecordToGAS(currentUser, todayKey());
   showToast('🗑️ '+typeName+'を取り消しました');
+}
+
+// 早出申請の取り消し（単体型）
+function cancelEarly() {
+  if (!currentUser) return;
+  const rec = getTodayRec();
+  if (!rec.early || rec.early.status === 'rejected') { showToast('取り消しできる申請がありません'); return; }
+  if (!confirm('早出申請を取り消しますか？')) return;
+  rec.early = null;
+  saveData(); renderAll();
+  syncRecordToGAS(currentUser, todayKey());
+  showToast('🗑️ 早出申請を取り消しました');
 }
 
 function approveOt(userName, dateKey) {
@@ -1552,6 +1601,7 @@ function submitEarly() {
   rec.early = { startTime, reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
   saveData(); renderAll(); hideModal('modalEarly');
   syncRecordToGAS(currentUser, date);
+  notifyAdminsViaGAS('early', startTime+'〜8:00', date);
   showToast('🌅 早出申請を送信しました（'+startTime+'〜8:00）');
 }
 
@@ -1611,6 +1661,7 @@ function submitPaid() {
   rec.paid.push({ startTime, endTime, reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' });
   saveData(); renderAll(); hideModal('modalPaid');
   syncRecordToGAS(currentUser, date);
+  notifyAdminsViaGAS('paid', startTime+'〜'+endTime, date);
   showToast('📅 有給申請を送信しました（'+startTime+'〜'+endTime+'）');
 }
 
@@ -1656,6 +1707,7 @@ function submitHoliday() {
   rec.holiday.push({ workDate, startTime, endTime, wantComp, compDate: wantComp?compDate:'', compTime: wantComp?compTime:'', reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' });
   saveData(); renderAll(); hideModal('modalHoliday');
   syncRecordToGAS(currentUser, workDate);
+  notifyAdminsViaGAS('holiday', workDate+' '+startTime+'〜'+endTime, workDate);
   showToast('🏢 休日出勤申請を送信しました（'+startTime+'〜'+endTime+'）');
 }
 
@@ -2009,8 +2061,11 @@ function renderStatus() {
     const labels = {pending:'承認待ち',approved:'承認済み',rejected:'却下'};
     let txt = icons[app.status]+' '+typeInfo.label+' '+labels[app.status]+' ／ '+detailText;
     if (app.status==='rejected'&&app.comment) txt += '（'+app.comment+'）';
+    const cancelBtn = (typeInfo.key==='early' && app.status!=='rejected')
+      ? `<button onclick="cancelEarly()" style="margin-left:8px;font-size:11px;padding:3px 9px;border:1px solid currentColor;border-radius:6px;background:transparent;color:inherit;cursor:pointer;opacity:.8;">取り消し</button>`
+      : '';
     bar.className = 'ot-status-bar '+typeInfo.barClass;
-    bar.innerHTML = txt; bar.style.display = '';
+    bar.innerHTML = txt + cancelBtn; bar.style.display = '';
   }
   // ── 配列型ステータスバー（有給・休日出勤）──
   function renderMultiAppBars(containerId, apps, typeInfo, detailFn) {
@@ -2435,6 +2490,8 @@ function renderApprovalTab() {
         if(Array.isArray(val)) val.forEach(a=>{ if(a?.status==='pending') count++; });
         else if(val?.status==='pending') count++;
       });
+      // 延長申請も集計
+      if(rec.ot?.status==='approved' && rec.ot?.extension?.status==='pending') count++;
     });
   });
   const badge=document.getElementById('approvalBadge');

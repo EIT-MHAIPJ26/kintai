@@ -644,7 +644,11 @@
       <label>振替希望日</label>
       <input type="date" id="compDate"/>
       <label>希望時間帯（任意）</label>
-      <input type="text" id="compTime" placeholder="例：午前中、13:00〜17:00"/>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <input type="time" id="compTimeStart" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;">
+        <span style="color:var(--subtext);">〜</span>
+        <input type="time" id="compTimeEnd" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;">
+      </div>
     </div>
     <div class="modal-buttons">
       <button class="btn-cancel" onclick="hideModal('modalHoliday')">キャンセル</button>
@@ -684,16 +688,22 @@
     </div>
     <!-- 振替専用フィールド -->
     <div id="miscFurikaeGroup" style="display:none;">
-      <label>振替元日（出勤した日）</label>
+      <label>出勤日</label>
       <input type="date" id="miscFurikaeWorkDate" style="width:100%;box-sizing:border-box;">
-      <label>振替元の勤務時間</label>
+      <label>勤務時間</label>
       <div style="display:flex;gap:8px;align-items:center;">
         <input type="time" id="miscFurikaeWorkStart" style="flex:1;">
         <span style="color:var(--subtext);">〜</span>
         <input type="time" id="miscFurikaeWorkEnd" style="flex:1;">
       </div>
-      <label>振替取得日（休む日）</label>
+      <label>振替休日</label>
       <input type="date" id="miscFurikaeTakeDate" style="width:100%;box-sizing:border-box;">
+      <label>振替時間</label>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input type="time" id="miscFurikaeTakeStart" style="flex:1;">
+        <span style="color:var(--subtext);">〜</span>
+        <input type="time" id="miscFurikaeTakeEnd" style="flex:1;">
+      </div>
     </div>
     <label>理由・内容</label>
     <textarea id="miscReason" placeholder="理由・内容を入力してください"></textarea>
@@ -1766,7 +1776,8 @@ function showHolidayModal() {
   document.getElementById('compNo').checked = true;
   document.getElementById('compDateSection').style.display = 'none';
   document.getElementById('compDate').value = '';
-  document.getElementById('compTime').value = '';
+  document.getElementById('compTimeStart').value = '';
+  document.getElementById('compTimeEnd').value = '';
   document.getElementById('modalHoliday').classList.add('show');
 }
 
@@ -1775,9 +1786,11 @@ function submitHoliday() {
   const startTime = document.getElementById('holidayStartTime').value;
   const endTime   = document.getElementById('holidayEndTime').value;
   const reason    = document.getElementById('holidayReason').value.trim();
-  const wantComp  = document.getElementById('compYes').checked;
-  const compDate  = document.getElementById('compDate').value;
-  const compTime  = document.getElementById('compTime').value.trim();
+  const wantComp      = document.getElementById('compYes').checked;
+  const compDate      = document.getElementById('compDate').value;
+  const compTimeStart = document.getElementById('compTimeStart').value;
+  const compTimeEnd   = document.getElementById('compTimeEnd').value;
+  const compTime      = compTimeStart ? compTimeStart+(compTimeEnd?'〜'+compTimeEnd:'') : '';
   if (!workDate)  { showToast('出勤日を選択してください'); return; }
   if (!startTime || !endTime) { showToast('勤務時間を入力してください'); return; }
   if (startTime >= endTime)   { showToast('終了時刻は開始時刻より後にしてください'); return; }
@@ -1810,6 +1823,8 @@ function showMiscModal() {
   document.getElementById('miscFurikaeWorkStart').value = '';
   document.getElementById('miscFurikaeWorkEnd').value   = '';
   document.getElementById('miscFurikaeTakeDate').value  = '';
+  document.getElementById('miscFurikaeTakeStart').value = '';
+  document.getElementById('miscFurikaeTakeEnd').value   = '';
   updateMiscFields();
   document.getElementById('modalMisc').classList.add('show');
 }
@@ -1863,16 +1878,19 @@ function submitMisc() {
     const workStart  = document.getElementById('miscFurikaeWorkStart').value;
     const workEnd    = document.getElementById('miscFurikaeWorkEnd').value;
     const takeDate   = document.getElementById('miscFurikaeTakeDate').value;
-    if (!workDate)  { showToast('振替元日を選択してください'); return; }
-    if (!takeDate)  { showToast('振替取得日を選択してください'); return; }
+    const takeStart  = document.getElementById('miscFurikaeTakeStart').value;
+    const takeEnd    = document.getElementById('miscFurikaeTakeEnd').value;
+    if (!workDate)  { showToast('出勤日を選択してください'); return; }
+    if (!takeDate)  { showToast('振替休日を選択してください'); return; }
     if (!reason)    { showToast('理由・内容を入力してください'); return; }
     const rec = getRecByKey(currentUser, workDate);
     if (!Array.isArray(rec.misc)) rec.misc = [];
-    rec.misc.push({ subType, date: workDate, workDate, workStart, workEnd, takeDate, reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' });
+    rec.misc.push({ subType, date: workDate, workDate, workStart, workEnd, takeDate, takeStart, takeEnd, reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' });
     saveData(); renderAll(); hideModal('modalMisc');
     syncRecordToGAS(currentUser, workDate);
-    const timeStr = workStart ? ' '+workStart+(workEnd?'〜'+workEnd:'') : '';
-    const detail  = `振替　振替元：${workDate}${timeStr}　振替取得日：${takeDate}　${reason}`;
+    const wTimeStr = workStart ? ' '+workStart+(workEnd?'〜'+workEnd:'') : '';
+    const tTimeStr = takeStart ? ' '+takeStart+(takeEnd?'〜'+takeEnd:'') : '';
+    const detail  = `振替　出勤日：${workDate}${wTimeStr}　振替休日：${takeDate}${tTimeStr}　${reason}`;
     notifyAdminsViaGAS('misc', detail, workDate);
     showToast('📋 振替申請を送信しました');
     return;
@@ -2317,7 +2335,7 @@ function renderStatus() {
   renderAppBar('earlyStatusBar', rec.early, earlyType, rec.early ? rec.early.startTime+'〜8:00' : '');
   renderMultiAppBars('paidStatusBar',    rec.paid,    paidType,    app => app.startTime+'〜'+app.endTime);
   renderMultiAppBars('holidayStatusBar', rec.holiday, holidayType, app => app.workDate+(app.wantComp?'（振替希望）':'（振替なし）'));
-  renderMultiAppBars('miscStatusBar',    rec.misc,    APP_TYPES.find(t=>t.key==='misc'),    app => app.subType==='振替' ? '振替元:'+app.workDate+(app.workStart?' '+app.workStart+(app.workEnd?'〜'+app.workEnd:''):'')+'　取得:'+app.takeDate : (app.endDate?' '+app.date+'〜'+app.endDate:app.startTime?' '+app.startTime+(app.endTime?'〜'+app.endTime:''):''));
+  renderMultiAppBars('miscStatusBar',    rec.misc,    APP_TYPES.find(t=>t.key==='misc'),    app => app.subType==='振替' ? '出勤:'+app.workDate+(app.workStart?' '+app.workStart+(app.workEnd?'〜'+app.workEnd:''):'')+'　振替休日:'+app.takeDate+(app.takeStart?' '+app.takeStart+(app.takeEnd?'〜'+app.takeEnd:''):'') : (app.endDate?' '+app.date+'〜'+app.endDate:app.startTime?' '+app.startTime+(app.endTime?'〜'+app.endTime:''):''));
 
   // ── 今日以降の申請をすべて表示 ──
   renderUpcomingApps();
@@ -2349,7 +2367,8 @@ function renderUpcomingApps() {
         else if (t.key==='misc') {
           if (app.subType === '振替') {
             const wTime = app.workStart ? ' '+app.workStart+(app.workEnd?'〜'+app.workEnd:'') : '';
-            detail = `振替　振替元：${app.workDate}${wTime}　取得日：${app.takeDate}`;
+            const tTime = app.takeStart ? ' '+app.takeStart+(app.takeEnd?'〜'+app.takeEnd:'') : '';
+            detail = `振替　出勤日：${app.workDate}${wTime}　振替休日：${app.takeDate}${tTime}`;
           } else {
             detail = app.subType+(app.startTime?' '+app.startTime:'');
           }
@@ -2528,7 +2547,8 @@ function renderMyApplications() {
         else if (t.key==='misc') {
           if (app.subType === '振替') {
             const wTime = app.workStart ? ' '+app.workStart+(app.workEnd?'〜'+app.workEnd:'') : '';
-            detail = `振替　振替元：${app.workDate}${wTime}　取得日：${app.takeDate}`;
+            const tTime = app.takeStart ? ' '+app.takeStart+(app.takeEnd?'〜'+app.takeEnd:'') : '';
+            detail = `振替　出勤日：${app.workDate}${wTime}　振替休日：${app.takeDate}${tTime}`;
           } else {
             detail = app.subType+(app.startTime?' '+app.startTime:'');
           }
@@ -2761,7 +2781,8 @@ function renderApprovalList() {
     else if(type==='misc') {
       if (app.subType === '振替') {
         const wTime = app.workStart ? ` ${app.workStart}${app.workEnd?'〜'+app.workEnd:''}` : '';
-        detailHtml = `${typeInfo.icon} 振替　振替元：<strong>${app.workDate}${wTime}</strong>　取得日：<strong>${app.takeDate}</strong>`;
+        const tTime = app.takeStart ? ` ${app.takeStart}${app.takeEnd?'〜'+app.takeEnd:''}` : '';
+        detailHtml = `${typeInfo.icon} 振替　出勤日：<strong>${app.workDate}${wTime}</strong>　振替休日：<strong>${app.takeDate}${tTime}</strong>`;
       } else {
         detailHtml = `${typeInfo.icon} ${app.subType}${app.endDate?' <strong>'+app.date+'〜'+app.endDate+'</strong>':app.startTime?' <strong>'+app.startTime+(app.endTime?'〜'+app.endTime:'')+'</strong>':''}`;
       }

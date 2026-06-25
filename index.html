@@ -665,11 +665,14 @@
       <option value="特別休暇">特別休暇</option>
       <option value="欠勤">欠勤</option>
     </select>
-    <label id="miscDateLabel">対象日</label>
-    <div style="display:flex;gap:8px;align-items:center;">
-      <input type="date" id="miscDate" style="flex:1;">
-      <span id="miscDateRangeSep" style="color:var(--subtext);display:none;">〜</span>
-      <input type="date" id="miscEndDate" style="flex:1;display:none;">
+    <!-- 通常の日付・時間グループ（振替以外） -->
+    <div id="miscDateGroup">
+      <label id="miscDateLabel">対象日</label>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input type="date" id="miscDate" style="flex:1;">
+        <span id="miscDateRangeSep" style="color:var(--subtext);display:none;">〜</span>
+        <input type="date" id="miscEndDate" style="flex:1;display:none;">
+      </div>
     </div>
     <div id="miscTimeGroup">
       <label id="miscTimeLabel">時間（開始〜終了）</label>
@@ -678,6 +681,19 @@
         <span style="color:var(--subtext);">〜</span>
         <input type="time" id="miscEndTime" style="flex:1;">
       </div>
+    </div>
+    <!-- 振替専用フィールド -->
+    <div id="miscFurikaeGroup" style="display:none;">
+      <label>振替元日（出勤した日）</label>
+      <input type="date" id="miscFurikaeWorkDate" style="width:100%;box-sizing:border-box;">
+      <label>振替元の勤務時間</label>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input type="time" id="miscFurikaeWorkStart" style="flex:1;">
+        <span style="color:var(--subtext);">〜</span>
+        <input type="time" id="miscFurikaeWorkEnd" style="flex:1;">
+      </div>
+      <label>振替取得日（休む日）</label>
+      <input type="date" id="miscFurikaeTakeDate" style="width:100%;box-sizing:border-box;">
     </div>
     <label>理由・内容</label>
     <textarea id="miscReason" placeholder="理由・内容を入力してください"></textarea>
@@ -1790,34 +1806,47 @@ function showMiscModal() {
   document.getElementById('miscStartTime').value = '';
   document.getElementById('miscEndTime').value = '';
   document.getElementById('miscReason').value = '';
+  document.getElementById('miscFurikaeWorkDate').value  = todayKey();
+  document.getElementById('miscFurikaeWorkStart').value = '';
+  document.getElementById('miscFurikaeWorkEnd').value   = '';
+  document.getElementById('miscFurikaeTakeDate').value  = '';
   updateMiscFields();
   document.getElementById('modalMisc').classList.add('show');
 }
 
 function updateMiscFields() {
-  const subType = document.getElementById('miscSubType').value;
-  const timeGroup = document.getElementById('miscTimeGroup');
-  const timeLabel = document.getElementById('miscTimeLabel');
-  const dateLabel = document.getElementById('miscDateLabel');
-  const endDate   = document.getElementById('miscEndDate');
-  const sep       = document.getElementById('miscDateRangeSep');
-  // 特別休暇のみ日付範囲を表示
-  if (subType === '特別休暇') {
+  const subType      = document.getElementById('miscSubType').value;
+  const timeGroup    = document.getElementById('miscTimeGroup');
+  const timeLabel    = document.getElementById('miscTimeLabel');
+  const dateLabel    = document.getElementById('miscDateLabel');
+  const dateGroup    = document.getElementById('miscDateGroup');
+  const endDate      = document.getElementById('miscEndDate');
+  const sep          = document.getElementById('miscDateRangeSep');
+  const furikaeGroup = document.getElementById('miscFurikaeGroup');
+
+  if (subType === '振替') {
+    // 振替：専用フィールドを表示、通常フィールドを非表示
+    dateGroup.style.display    = 'none';
+    timeGroup.style.display    = 'none';
+    furikaeGroup.style.display = '';
+  } else if (subType === '特別休暇') {
+    dateGroup.style.display    = '';
+    timeGroup.style.display    = 'none';
+    furikaeGroup.style.display = 'none';
     dateLabel.textContent = '対象期間';
     endDate.style.display = '';
-    sep.style.display = '';
-    timeGroup.style.display = 'none';
+    sep.style.display     = '';
   } else {
+    dateGroup.style.display    = '';
+    timeGroup.style.display    = '';
+    furikaeGroup.style.display = 'none';
     dateLabel.textContent = '対象日';
     endDate.style.display = 'none';
-    sep.style.display = 'none';
-    timeGroup.style.display = '';
+    sep.style.display     = 'none';
     if (subType === '遅刻') {
       timeLabel.textContent = '時間（※遅刻対象となる時間）';
     } else if (subType === '早退') {
       timeLabel.textContent = '時間（※早退対象となる時間）';
-    } else if (subType === '振替') {
-      timeLabel.textContent = '振替勤務時間（開始〜終了）';
     } else {
       timeLabel.textContent = '時間（任意）';
     }
@@ -1826,11 +1855,33 @@ function updateMiscFields() {
 
 function submitMisc() {
   const subType   = document.getElementById('miscSubType').value;
+  const reason    = document.getElementById('miscReason').value.trim();
+
+  if (subType === '振替') {
+    // 振替専用バリデーション
+    const workDate   = document.getElementById('miscFurikaeWorkDate').value;
+    const workStart  = document.getElementById('miscFurikaeWorkStart').value;
+    const workEnd    = document.getElementById('miscFurikaeWorkEnd').value;
+    const takeDate   = document.getElementById('miscFurikaeTakeDate').value;
+    if (!workDate)  { showToast('振替元日を選択してください'); return; }
+    if (!takeDate)  { showToast('振替取得日を選択してください'); return; }
+    if (!reason)    { showToast('理由・内容を入力してください'); return; }
+    const rec = getRecByKey(currentUser, workDate);
+    if (!Array.isArray(rec.misc)) rec.misc = [];
+    rec.misc.push({ subType, date: workDate, workDate, workStart, workEnd, takeDate, reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' });
+    saveData(); renderAll(); hideModal('modalMisc');
+    syncRecordToGAS(currentUser, workDate);
+    const timeStr = workStart ? ' '+workStart+(workEnd?'〜'+workEnd:'') : '';
+    const detail  = `振替　振替元：${workDate}${timeStr}　振替取得日：${takeDate}　${reason}`;
+    notifyAdminsViaGAS('misc', detail, workDate);
+    showToast('📋 振替申請を送信しました');
+    return;
+  }
+
   const date      = document.getElementById('miscDate').value;
   const endDate   = subType === '特別休暇' ? document.getElementById('miscEndDate').value : '';
   const startTime = document.getElementById('miscStartTime').value;
   const endTime   = document.getElementById('miscEndTime').value;
-  const reason    = document.getElementById('miscReason').value.trim();
   if (!date)   { showToast('対象日を選択してください'); return; }
   if (subType === '特別休暇' && !endDate) { showToast('終了日を選択してください'); return; }
   if (!reason) { showToast('理由・内容を入力してください'); return; }
@@ -2266,7 +2317,7 @@ function renderStatus() {
   renderAppBar('earlyStatusBar', rec.early, earlyType, rec.early ? rec.early.startTime+'〜8:00' : '');
   renderMultiAppBars('paidStatusBar',    rec.paid,    paidType,    app => app.startTime+'〜'+app.endTime);
   renderMultiAppBars('holidayStatusBar', rec.holiday, holidayType, app => app.workDate+(app.wantComp?'（振替希望）':'（振替なし）'));
-  renderMultiAppBars('miscStatusBar',    rec.misc,    APP_TYPES.find(t=>t.key==='misc'),    app => app.subType+(app.endDate?' '+app.date+'〜'+app.endDate:app.startTime?' '+app.startTime+(app.endTime?'〜'+app.endTime:''):''));
+  renderMultiAppBars('miscStatusBar',    rec.misc,    APP_TYPES.find(t=>t.key==='misc'),    app => app.subType==='振替' ? '振替元:'+app.workDate+(app.workStart?' '+app.workStart+(app.workEnd?'〜'+app.workEnd:''):'')+'　取得:'+app.takeDate : (app.endDate?' '+app.date+'〜'+app.endDate:app.startTime?' '+app.startTime+(app.endTime?'〜'+app.endTime:''):''));
 
   // ── 今日以降の申請をすべて表示 ──
   renderUpcomingApps();
@@ -2295,7 +2346,14 @@ function renderUpcomingApps() {
         else if (t.key==='early')   detail = app.startTime+'〜8:00';
         else if (t.key==='paid')    detail = app.startTime+'〜'+app.endTime;
         else if (t.key==='holiday') detail = (app.startTime||'')+'〜'+(app.endTime||'');
-        else if (t.key==='misc')    detail = app.subType+(app.startTime?' '+app.startTime:'');
+        else if (t.key==='misc') {
+          if (app.subType === '振替') {
+            const wTime = app.workStart ? ' '+app.workStart+(app.workEnd?'〜'+app.workEnd:'') : '';
+            detail = `振替　振替元：${app.workDate}${wTime}　取得日：${app.takeDate}`;
+          } else {
+            detail = app.subType+(app.startTime?' '+app.startTime:'');
+          }
+        }
         items.push({ targetDate, typeInfo:t, app, detail });
       });
     });
@@ -2467,7 +2525,14 @@ function renderMyApplications() {
         else if (t.key==='early')   detail = '早出 '+app.startTime+'〜8:00';
         else if (t.key==='paid')    detail = '有給 '+app.startTime+'〜'+app.endTime;
         else if (t.key==='holiday') detail = '休日出勤 '+app.workDate+' '+(app.startTime||'')+'〜'+(app.endTime||'')+(app.wantComp?' 振替希望':'');
-        else if (t.key==='misc')    detail = app.subType+(app.startTime?' '+app.startTime:'');
+        else if (t.key==='misc') {
+          if (app.subType === '振替') {
+            const wTime = app.workStart ? ' '+app.workStart+(app.workEnd?'〜'+app.workEnd:'') : '';
+            detail = `振替　振替元：${app.workDate}${wTime}　取得日：${app.takeDate}`;
+          } else {
+            detail = app.subType+(app.startTime?' '+app.startTime:'');
+          }
+        }
         const appIdx = Array.isArray(val) ? idx : null;
         items.push({ dateKey, dateStr, type:t.key, typeInfo:t, app, detail, appIdx });
       });
@@ -2693,7 +2758,14 @@ function renderApprovalList() {
     else if(type==='early')   detailHtml=`${typeInfo.icon} 早出 <strong>${app.startTime}〜8:00</strong>`;
     else if(type==='paid')    detailHtml=`${typeInfo.icon} 有給 <strong>${app.startTime}〜${app.endTime}</strong>`;
     else if(type==='holiday') detailHtml=`${typeInfo.icon} 休日出勤 <strong>${app.workDate}</strong> ${app.startTime||''}〜${app.endTime||''} ${app.wantComp?` 振替希望：${app.compDate}${app.compTime?' '+app.compTime:''}`:'（振替なし）'}`;
-    else if(type==='misc')    detailHtml=`${typeInfo.icon} ${app.subType}${app.endDate?' <strong>'+app.date+'〜'+app.endDate+'</strong>':app.startTime?' <strong>'+app.startTime+(app.endTime?'〜'+app.endTime:'')+'</strong>':''}`;
+    else if(type==='misc') {
+      if (app.subType === '振替') {
+        const wTime = app.workStart ? ` ${app.workStart}${app.workEnd?'〜'+app.workEnd:''}` : '';
+        detailHtml = `${typeInfo.icon} 振替　振替元：<strong>${app.workDate}${wTime}</strong>　取得日：<strong>${app.takeDate}</strong>`;
+      } else {
+        detailHtml = `${typeInfo.icon} ${app.subType}${app.endDate?' <strong>'+app.date+'〜'+app.endDate+'</strong>':app.startTime?' <strong>'+app.startTime+(app.endTime?'〜'+app.endTime:'')+'</strong>':''}`;
+      }
+    }
 
     const isSelf = name === currentUser;
     const idxArg = idx !== null ? `,${idx}` : '';

@@ -901,14 +901,17 @@ function updateSyncIndicator(status) {
 }
 
 // 指定メンバー・日付の記録をGASへ送信
-function syncRecordToGAS(name, dateKey) {
+// notifyInfo = { typeName, detail, date } を渡すと通知も同時送信
+function syncRecordToGAS(name, dateKey, notifyInfo) {
   if (!gasUrl) return;
   const rec = getRecByKey(name, dateKey);
   updateSyncIndicator('syncing');
+  const body = { action:'upsertRecord', name, date:dateKey, pairs:rec.pairs||[], ot:rec.ot||null, early:rec.early||null, paid:rec.paid||null, holiday:rec.holiday||null, misc:rec.misc||null, updatedAt:rec.updatedAt||0 };
+  if (notifyInfo) body.notifyInfo = notifyInfo;
   fetch(gasUrl, {
     method: 'POST',
     mode: 'no-cors',
-    body: JSON.stringify({ action:'upsertRecord', name, date:dateKey, pairs:rec.pairs||[], ot:rec.ot||null, early:rec.early||null, paid:rec.paid||null, holiday:rec.holiday||null, misc:rec.misc||null, updatedAt:rec.updatedAt||0 })
+    body: JSON.stringify(body)
   })
   .then(() => {
     updateSyncIndicator('ok');
@@ -995,20 +998,18 @@ function saveNotifEmail() {
 }
 
 // 申請送信時に管理者へメール通知
+// 申請送信時: syncRecordToGAS に通知情報を乗せて1回のPOSTで完結させる
 function notifyAdminsViaGAS(type, detail, date) {
   if (!gasUrl) return;
   const typeNames = { ot:'残業申請', otExt:'残業延長申請', early:'早出申請', paid:'有給申請', holiday:'休日出勤申請', misc:'その他申請' };
-  fetch(gasUrl, {
-    method: 'POST',
-    mode:   'no-cors',
-    body:   JSON.stringify({
-      action:   'notifyAdmins',
-      name:     currentUser,
-      typeName: typeNames[type] || type,
-      detail,
-      date:     date || todayKey()
-    })
-  }).catch(() => {});
+  const notifyInfo = { name: currentUser, typeName: typeNames[type] || type, detail, date: date || todayKey() };
+  const dateKey = date || todayKey();
+  const rec = getRecByKey(currentUser, dateKey);
+  updateSyncIndicator('syncing');
+  const body = { action:'upsertRecord', name:currentUser, date:dateKey, pairs:rec.pairs||[], ot:rec.ot||null, early:rec.early||null, paid:rec.paid||null, holiday:rec.holiday||null, misc:rec.misc||null, updatedAt:rec.updatedAt||0, notifyInfo };
+  fetch(gasUrl, { method:'POST', mode:'no-cors', body: JSON.stringify(body) })
+    .then(() => updateSyncIndicator('ok'))
+    .catch(() => {});
 }
 
 function saveSyncSettings() {

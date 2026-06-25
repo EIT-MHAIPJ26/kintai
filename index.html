@@ -655,30 +655,28 @@
 
 <!-- その他申請モーダル -->
 <div class="modal-overlay" id="modalMisc" onclick="closeModalBg(event,'modalMisc')">
-  <div class="modal-card">
+  <div class="modal">
     <h3>📋 その他申請</h3>
-    <div class="form-group">
-      <label>申請種別</label>
-      <select id="miscSubType" onchange="updateMiscFields()">
-        <option value="遅刻">遅刻</option>
-        <option value="早退">早退</option>
-        <option value="振替">振替</option>
-        <option value="特別休暇">特別休暇</option>
-        <option value="欠勤">欠勤</option>
-      </select>
+    <label>申請種別</label>
+    <select id="miscSubType" onchange="updateMiscFields()">
+      <option value="遅刻">遅刻</option>
+      <option value="早退">早退</option>
+      <option value="振替">振替</option>
+      <option value="特別休暇">特別休暇</option>
+      <option value="欠勤">欠勤</option>
+    </select>
+    <label>対象日</label>
+    <input type="date" id="miscDate">
+    <div id="miscTimeGroup">
+      <label id="miscTimeLabel">時間（開始〜終了）</label>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input type="time" id="miscStartTime" style="flex:1;">
+        <span style="color:var(--subtext);">〜</span>
+        <input type="time" id="miscEndTime" style="flex:1;">
+      </div>
     </div>
-    <div class="form-group">
-      <label>対象日</label>
-      <input type="date" id="miscDate">
-    </div>
-    <div class="form-group" id="miscTimeGroup">
-      <label id="miscTimeLabel">到着予定時刻</label>
-      <input type="time" id="miscTime">
-    </div>
-    <div class="form-group">
-      <label>理由・内容</label>
-      <textarea id="miscReason" placeholder="理由・内容を入力してください" rows="3" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;resize:none;"></textarea>
-    </div>
+    <label>理由・内容</label>
+    <textarea id="miscReason" placeholder="理由・内容を入力してください"></textarea>
     <div class="modal-buttons">
       <button class="btn-cancel" onclick="hideModal('modalMisc')">キャンセル</button>
       <button class="btn-confirm" style="background:linear-gradient(135deg,#5856D6,#7B6FE8)" onclick="submitMisc()">申請する</button>
@@ -1784,7 +1782,8 @@ function showMiscModal() {
   if (!currentUser) return;
   document.getElementById('miscDate').value = todayKey();
   document.getElementById('miscSubType').value = '遅刻';
-  document.getElementById('miscTime').value = '';
+  document.getElementById('miscStartTime').value = '';
+  document.getElementById('miscEndTime').value = '';
   document.getElementById('miscReason').value = '';
   updateMiscFields();
   document.getElementById('modalMisc').classList.add('show');
@@ -1794,30 +1793,35 @@ function updateMiscFields() {
   const subType = document.getElementById('miscSubType').value;
   const timeGroup = document.getElementById('miscTimeGroup');
   const timeLabel = document.getElementById('miscTimeLabel');
+  timeGroup.style.display = '';
   if (subType === '遅刻') {
-    timeGroup.style.display = '';
-    timeLabel.textContent = '到着予定時刻';
+    timeLabel.textContent = '時間（到着予定〜退勤）';
   } else if (subType === '早退') {
-    timeGroup.style.display = '';
-    timeLabel.textContent = '早退予定時刻';
-  } else {
-    timeGroup.style.display = 'none';
+    timeLabel.textContent = '時間（出勤〜早退予定）';
+  } else if (subType === '振替') {
+    timeLabel.textContent = '振替勤務時間（開始〜終了）';
+  } else if (subType === '特別休暇') {
+    timeLabel.textContent = '時間（任意）';
+  } else if (subType === '欠勤') {
+    timeLabel.textContent = '時間（任意）';
   }
 }
 
 function submitMisc() {
   const subType   = document.getElementById('miscSubType').value;
   const date      = document.getElementById('miscDate').value;
-  const startTime = document.getElementById('miscTime').value;
+  const startTime = document.getElementById('miscStartTime').value;
+  const endTime   = document.getElementById('miscEndTime').value;
   const reason    = document.getElementById('miscReason').value.trim();
   if (!date)   { showToast('対象日を選択してください'); return; }
   if (!reason) { showToast('理由・内容を入力してください'); return; }
   const rec = getRecByKey(currentUser, date);
   if (!Array.isArray(rec.misc)) rec.misc = [];
-  rec.misc.push({ subType, date, startTime, reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' });
+  rec.misc.push({ subType, date, startTime, endTime, reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' });
   saveData(); renderAll(); hideModal('modalMisc');
   syncRecordToGAS(currentUser, date);
-  const detail = subType + (startTime ? ' '+startTime : '') + '　' + reason;
+  const timeStr = startTime ? startTime+(endTime?'〜'+endTime:'') : '';
+  const detail = subType + (timeStr ? ' '+timeStr : '') + '　' + reason;
   notifyAdminsViaGAS('misc', detail, date);
   showToast('📋 その他申請（'+subType+'）を送信しました');
 }
@@ -2242,7 +2246,7 @@ function renderStatus() {
   renderAppBar('earlyStatusBar', rec.early, earlyType, rec.early ? rec.early.startTime+'〜8:00' : '');
   renderMultiAppBars('paidStatusBar',    rec.paid,    paidType,    app => app.startTime+'〜'+app.endTime);
   renderMultiAppBars('holidayStatusBar', rec.holiday, holidayType, app => app.workDate+(app.wantComp?'（振替希望）':'（振替なし）'));
-  renderMultiAppBars('miscStatusBar',    rec.misc,    APP_TYPES.find(t=>t.key==='misc'),    app => app.subType+(app.startTime?' '+app.startTime:''));
+  renderMultiAppBars('miscStatusBar',    rec.misc,    APP_TYPES.find(t=>t.key==='misc'),    app => app.subType+(app.startTime?' '+app.startTime+(app.endTime?'〜'+app.endTime:''):''));
 
   // ── 今日以降の申請をすべて表示 ──
   renderUpcomingApps();
@@ -2669,7 +2673,7 @@ function renderApprovalList() {
     else if(type==='early')   detailHtml=`${typeInfo.icon} 早出 <strong>${app.startTime}〜8:00</strong>`;
     else if(type==='paid')    detailHtml=`${typeInfo.icon} 有給 <strong>${app.startTime}〜${app.endTime}</strong>`;
     else if(type==='holiday') detailHtml=`${typeInfo.icon} 休日出勤 <strong>${app.workDate}</strong> ${app.startTime||''}〜${app.endTime||''} ${app.wantComp?` 振替希望：${app.compDate}${app.compTime?' '+app.compTime:''}`:'（振替なし）'}`;
-    else if(type==='misc')    detailHtml=`${typeInfo.icon} ${app.subType}${app.startTime?' <strong>'+app.startTime+'</strong>':''}`;
+    else if(type==='misc')    detailHtml=`${typeInfo.icon} ${app.subType}${app.startTime?' <strong>'+app.startTime+(app.endTime?'〜'+app.endTime:'')+'</strong>':''}`;
 
     const isSelf = name === currentUser;
     const idxArg = idx !== null ? `,${idx}` : '';

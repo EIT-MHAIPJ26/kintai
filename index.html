@@ -907,16 +907,11 @@ function syncRecordToGAS(name, dateKey) {
   updateSyncIndicator('syncing');
   fetch(gasUrl, {
     method: 'POST',
-    body: JSON.stringify({ action:'upsertRecord', name, date:dateKey, pairs:rec.pairs||[], ot:rec.ot||null, early:rec.early||null, paid:rec.paid||null, holiday:rec.holiday||null, updatedAt:rec.updatedAt||0 })
+    mode: 'no-cors',
+    body: JSON.stringify({ action:'upsertRecord', name, date:dateKey, pairs:rec.pairs||[], ot:rec.ot||null, early:rec.early||null, paid:rec.paid||null, holiday:rec.holiday||null, misc:rec.misc||null, updatedAt:rec.updatedAt||0 })
   })
-  .then(r => r.json())
-  .then(j => {
-    if (j.ok) {
-      updateSyncIndicator('ok');
-    } else {
-      updateSyncIndicator('error');
-      showToast('❌ GASエラー: ' + (j.error || '不明'));
-    }
+  .then(() => {
+    updateSyncIndicator('ok');
   })
   .catch(err => {
     updateSyncIndicator('error');
@@ -1003,16 +998,15 @@ function saveNotifEmail() {
 function notifyAdminsViaGAS(type, detail, date) {
   if (!gasUrl) return;
   const typeNames = { ot:'残業申請', otExt:'残業延長申請', early:'早出申請', paid:'有給申請', holiday:'休日出勤申請', misc:'その他申請' };
-  fetch(gasUrl, {
-    method: 'POST',
-    body: JSON.stringify({
-      action: 'notifyAdmins',
-      name: currentUser,
-      typeName: typeNames[type] || type,
-      detail,
-      date: date || todayKey()
-    })
-  }).catch(() => {});  // 通知失敗しても申請処理は止めない
+  // GASのリダイレクトでPOST→GETに変換される問題を回避するためGETで送信
+  const params = new URLSearchParams({
+    action:   'notifyAdmins',
+    name:     currentUser,
+    typeName: typeNames[type] || type,
+    detail:   detail,
+    date:     date || todayKey()
+  });
+  fetch(gasUrl + '?' + params.toString()).catch(() => {});
 }
 
 function saveSyncSettings() {

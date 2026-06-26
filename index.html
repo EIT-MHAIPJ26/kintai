@@ -624,7 +624,7 @@
 <!-- 休日出勤申請モーダル -->
 <div class="modal-overlay" id="modalHoliday" onclick="closeModalBg(event,'modalHoliday')">
   <div class="modal">
-    <h3>🏢 休日出勤申請</h3>
+    <h3 id="modalHolidayTitle">🏢 休日出勤申請</h3>
     <label>出勤日</label>
     <input type="date" id="holidayWorkDate"/>
     <label>勤務時間</label>
@@ -1764,8 +1764,12 @@ function toggleCompDate() {
   document.getElementById('compDateSection').style.display = want ? '' : 'none';
 }
 
+let _holidayReapply = null; // { dateKey, idx } 再申請時にセット
+
 function showHolidayModal() {
   if (!currentUser) return;
+  _holidayReapply = null;
+  document.getElementById('modalHolidayTitle').textContent = '🏢 休日出勤申請';
   document.getElementById('holidayWorkDate').value = todayKey();
   document.getElementById('holidayStartTime').value = '';
   document.getElementById('holidayEndTime').value = '';
@@ -1775,6 +1779,34 @@ function showHolidayModal() {
   document.getElementById('compDate').value = '';
   document.getElementById('compTimeStart').value = '';
   document.getElementById('compTimeEnd').value = '';
+  document.getElementById('modalHoliday').classList.add('show');
+}
+
+function showHolidayReapplyModal(dateKey, idx) {
+  if (!currentUser) return;
+  const rec = getRecByKey(currentUser, dateKey);
+  const app = Array.isArray(rec.holiday) ? rec.holiday[idx] : rec.holiday;
+  if (!app) return;
+  _holidayReapply = { dateKey, idx };
+  document.getElementById('modalHolidayTitle').textContent = '🔄 休日出勤 再申請';
+  document.getElementById('holidayWorkDate').value = app.workDate || dateKey;
+  document.getElementById('holidayStartTime').value = app.startTime || '';
+  document.getElementById('holidayEndTime').value = app.endTime || '';
+  document.getElementById('holidayReason').value = app.reason || '';
+  if (app.wantComp) {
+    document.getElementById('compYes').checked = true;
+    document.getElementById('compDateSection').style.display = '';
+    document.getElementById('compDate').value = app.compDate || '';
+    const times = (app.compTime || '').split('〜');
+    document.getElementById('compTimeStart').value = times[0] || '';
+    document.getElementById('compTimeEnd').value = times[1] || '';
+  } else {
+    document.getElementById('compNo').checked = true;
+    document.getElementById('compDateSection').style.display = 'none';
+    document.getElementById('compDate').value = '';
+    document.getElementById('compTimeStart').value = '';
+    document.getElementById('compTimeEnd').value = '';
+  }
   document.getElementById('modalHoliday').classList.add('show');
 }
 
@@ -1793,16 +1825,31 @@ function submitHoliday() {
   if (startTime >= endTime)   { showToast('終了時刻は開始時刻より後にしてください'); return; }
   if (!reason)    { showToast('理由を入力してください'); return; }
   if (wantComp && !compDate) { showToast('振替希望日を入力してください'); return; }
-  const rec = getRecByKey(currentUser, workDate);
-  if (!Array.isArray(rec.holiday)) rec.holiday = rec.holiday ? [rec.holiday] : [];
-  // 同じ時間帯で申請中・承認済みがあれば重複NG
-  const dup = rec.holiday.find(h => h.status !== 'rejected' && h.startTime === startTime && h.endTime === endTime);
-  if (dup) { showToast('同じ時間帯の休日出勤申請があります'); return; }
-  rec.holiday.push({ workDate, startTime, endTime, wantComp, compDate: wantComp?compDate:'', compTime: wantComp?compTime:'', reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' });
-  saveData(); renderAll(); hideModal('modalHoliday');
-  syncRecordToGAS(currentUser, workDate);
-  notifyAdminsViaGAS('holiday', workDate+' '+startTime+'〜'+endTime, workDate);
-  showToast('🏢 休日出勤申請を送信しました（'+startTime+'〜'+endTime+'）');
+
+  const newEntry = { workDate, startTime, endTime, wantComp, compDate: wantComp?compDate:'', compTime: wantComp?compTime:'', reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
+
+  if (_holidayReapply) {
+    // 再申請：既存エントリを新しい内容で上書き
+    const rec = getRecByKey(currentUser, _holidayReapply.dateKey);
+    if (!Array.isArray(rec.holiday)) rec.holiday = [];
+    rec.holiday[_holidayReapply.idx] = newEntry;
+    saveData(); renderAll(); hideModal('modalHoliday');
+    syncRecordToGAS(currentUser, _holidayReapply.dateKey);
+    notifyAdminsViaGAS('holiday', workDate+' '+startTime+'〜'+endTime+' （再申請）', workDate);
+    _holidayReapply = null;
+    showToast('🔄 休日出勤を再申請しました（'+startTime+'〜'+endTime+'）');
+  } else {
+    // 新規申請
+    const rec = getRecByKey(currentUser, workDate);
+    if (!Array.isArray(rec.holiday)) rec.holiday = rec.holiday ? [rec.holiday] : [];
+    const dup = rec.holiday.find(h => h.status !== 'rejected' && h.startTime === startTime && h.endTime === endTime);
+    if (dup) { showToast('同じ時間帯の休日出勤申請があります'); return; }
+    rec.holiday.push(newEntry);
+    saveData(); renderAll(); hideModal('modalHoliday');
+    syncRecordToGAS(currentUser, workDate);
+    notifyAdminsViaGAS('holiday', workDate+' '+startTime+'〜'+endTime, workDate);
+    showToast('🏢 休日出勤申請を送信しました（'+startTime+'〜'+endTime+'）');
+  }
 }
 
 // ============================================================
@@ -2585,6 +2632,9 @@ function renderMyApplications() {
     const cancelBtn = app.status === 'pending'
       ? `<button onclick="cancelAppByDate('${typeInfo.key}','${dateKey}'${idxArg})" style="margin-left:8px;font-size:11px;padding:3px 9px;border:1px solid var(--danger);border-radius:6px;background:transparent;color:var(--danger);cursor:pointer;">取り消し</button>`
       : '';
+    const reapplyBtn = (typeInfo.key === 'holiday' && app.status === 'approved')
+      ? `<button onclick="showHolidayReapplyModal('${dateKey}',${appIdx})" style="margin-left:8px;font-size:11px;padding:3px 9px;border:1px solid var(--danger);border-radius:6px;background:transparent;color:var(--danger);cursor:pointer;">🔄 再申請</button>`
+      : '';
 
     const item = document.createElement('div');
     item.className = 'myapp-item';
@@ -2599,7 +2649,7 @@ function renderMyApplications() {
       <div>
         <span class="myapp-status ${app.status}">${stIcons[app.status]} ${stLabels[app.status]}</span>
         ${approverTxt}
-        ${cancelBtn}
+        ${cancelBtn}${reapplyBtn}
       </div>`;
     list.appendChild(item);
   });

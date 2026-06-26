@@ -1482,7 +1482,6 @@ function submitOt() {
   const rec = getTodayRec();
   rec.ot = { plannedEnd, reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
   saveData(); renderAll(); hideModal('modalOt');
-  syncRecordToGAS(currentUser, todayKey());
   notifyAdminsViaGAS('ot', plannedEnd+'まで');
   showToast('📋 残業申請を送信しました（'+plannedEnd+'まで）');
 }
@@ -1534,7 +1533,6 @@ function submitOtExt() {
   if (!rec.ot || rec.ot.status !== 'approved') { showToast('承認済みの残業申請がありません'); return; }
   rec.ot.extension = { plannedEnd, reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
   saveData(); renderAll(); hideModal('modalOtExt');
-  syncRecordToGAS(currentUser, todayKey());
   notifyAdminsViaGAS('otExt', rec.ot.plannedEnd+'→'+plannedEnd+'まで延長');
   showToast('📋 延長申請を送信しました（'+plannedEnd+'まで）');
 }
@@ -1691,7 +1689,6 @@ function submitEarly() {
   if (rec.early?.status === 'approved') { showToast('承認済みです'); return; }
   rec.early = { startTime, reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
   saveData(); renderAll(); hideModal('modalEarly');
-  syncRecordToGAS(currentUser, date);
   notifyAdminsViaGAS('early', startTime+'〜8:00', date);
   showToast('🌅 早出申請を送信しました（'+startTime+'〜8:00）');
 }
@@ -1751,7 +1748,6 @@ function submitPaid() {
   if (dup) { showToast('同じ時間帯の有給申請があります'); return; }
   rec.paid.push({ startTime, endTime, reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' });
   saveData(); renderAll(); hideModal('modalPaid');
-  syncRecordToGAS(currentUser, date);
   notifyAdminsViaGAS('paid', startTime+'〜'+endTime, date);
   showToast('📅 有給申請を送信しました（'+startTime+'〜'+endTime+'）');
 }
@@ -1830,13 +1826,14 @@ function submitHoliday() {
 
   if (_holidayReapply) {
     // 再申請：既存エントリを新しい内容で上書き
-    const rec = getRecByKey(currentUser, _holidayReapply.dateKey);
-    if (!Array.isArray(rec.holiday)) rec.holiday = [];
-    rec.holiday[_holidayReapply.idx] = newEntry;
-    saveData(); renderAll(); hideModal('modalHoliday');
-    syncRecordToGAS(currentUser, _holidayReapply.dateKey);
-    notifyAdminsViaGAS('holiday', workDate+' '+startTime+'〜'+endTime+' （再申請）', workDate);
+    const ctx = _holidayReapply;
     _holidayReapply = null;
+    const rec = getRecByKey(currentUser, ctx.dateKey);
+    if (!Array.isArray(rec.holiday)) rec.holiday = [];
+    rec.holiday[ctx.idx] = newEntry;
+    saveData(); renderAll(); hideModal('modalHoliday');
+    // notifyAdminsViaGASがupsertRecord+notifyInfoを1回のPOSTで送る（ctx.dateKeyを使う）
+    notifyAdminsViaGAS('holiday', workDate+' '+startTime+'〜'+endTime+' （再申請）', ctx.dateKey);
     showToast('🔄 休日出勤を再申請しました（'+startTime+'〜'+endTime+'）');
   } else {
     // 新規申請
@@ -1846,7 +1843,6 @@ function submitHoliday() {
     if (dup) { showToast('同じ時間帯の休日出勤申請があります'); return; }
     rec.holiday.push(newEntry);
     saveData(); renderAll(); hideModal('modalHoliday');
-    syncRecordToGAS(currentUser, workDate);
     notifyAdminsViaGAS('holiday', workDate+' '+startTime+'〜'+endTime, workDate);
     showToast('🏢 休日出勤申請を送信しました（'+startTime+'〜'+endTime+'）');
   }
@@ -1931,7 +1927,6 @@ function submitMisc() {
     if (!Array.isArray(rec.misc)) rec.misc = [];
     rec.misc.push({ subType, date: workDate, workDate, workStart, workEnd, takeDate, takeStart, takeEnd, reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' });
     saveData(); renderAll(); hideModal('modalMisc');
-    syncRecordToGAS(currentUser, workDate);
     const wTimeStr = workStart ? ' '+workStart+(workEnd?'〜'+workEnd:'') : '';
     const tTimeStr = takeStart ? ' '+takeStart+(takeEnd?'〜'+takeEnd:'') : '';
     const detail  = `振替　出勤日：${workDate}${wTimeStr}　振替休日：${takeDate}${tTimeStr}　${reason}`;
@@ -1951,7 +1946,6 @@ function submitMisc() {
   if (!Array.isArray(rec.misc)) rec.misc = [];
   rec.misc.push({ subType, date, endDate, startTime, endTime, reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' });
   saveData(); renderAll(); hideModal('modalMisc');
-  syncRecordToGAS(currentUser, date);
   const dateStr  = endDate ? date+'〜'+endDate : date;
   const timeStr  = startTime ? ' '+startTime+(endTime?'〜'+endTime:'') : '';
   const detail   = subType + ' ' + dateStr + timeStr + '　' + reason;

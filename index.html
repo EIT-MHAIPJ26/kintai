@@ -629,9 +629,9 @@
     <input type="date" id="holidayWorkDate"/>
     <label>勤務時間</label>
     <div style="display:flex;align-items:center;gap:8px;">
-      <input type="time" id="holidayStartTime" step="900" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;"/>
+      <select id="holidayStartTime" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;background:var(--card);color:var(--text);"></select>
       <span style="color:var(--subtext);">〜</span>
-      <input type="time" id="holidayEndTime" step="900" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;"/>
+      <select id="holidayEndTime" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;background:var(--card);color:var(--text);"></select>
     </div>
     <label>理由</label>
     <textarea id="holidayReason" placeholder="休日出勤の理由を入力してください"></textarea>
@@ -645,9 +645,9 @@
       <input type="date" id="compDate"/>
       <label>希望時間帯（任意）</label>
       <div style="display:flex;align-items:center;gap:8px;">
-        <input type="time" id="compTimeStart" step="900" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;">
+        <select id="compTimeStart" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;background:var(--card);color:var(--text);"></select>
         <span style="color:var(--subtext);">〜</span>
-        <input type="time" id="compTimeEnd" step="900" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;">
+        <select id="compTimeEnd" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;background:var(--card);color:var(--text);"></select>
       </div>
     </div>
     <div class="modal-buttons">
@@ -681,9 +681,9 @@
     <div id="miscTimeGroup">
       <label id="miscTimeLabel">時間（開始〜終了）</label>
       <div style="display:flex;gap:8px;align-items:center;">
-        <input type="time" id="miscStartTime" step="900" style="flex:1;">
+        <select id="miscStartTime" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:8px 10px;font-size:14px;background:var(--card);color:var(--text);"></select>
         <span style="color:var(--subtext);">〜</span>
-        <input type="time" id="miscEndTime" step="900" style="flex:1;">
+        <select id="miscEndTime" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:8px 10px;font-size:14px;background:var(--card);color:var(--text);"></select>
       </div>
     </div>
     <!-- 振替専用フィールド -->
@@ -692,17 +692,17 @@
       <input type="date" id="miscFurikaeWorkDate" style="width:100%;box-sizing:border-box;">
       <label>勤務時間</label>
       <div style="display:flex;gap:8px;align-items:center;">
-        <input type="time" id="miscFurikaeWorkStart" step="900" style="flex:1;">
+        <select id="miscFurikaeWorkStart" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:8px 10px;font-size:14px;background:var(--card);color:var(--text);"></select>
         <span style="color:var(--subtext);">〜</span>
-        <input type="time" id="miscFurikaeWorkEnd" step="900" style="flex:1;">
+        <select id="miscFurikaeWorkEnd" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:8px 10px;font-size:14px;background:var(--card);color:var(--text);"></select>
       </div>
       <label>振替休日</label>
       <input type="date" id="miscFurikaeTakeDate" style="width:100%;box-sizing:border-box;">
       <label>振替時間</label>
       <div style="display:flex;gap:8px;align-items:center;">
-        <input type="time" id="miscFurikaeTakeStart" step="900" style="flex:1;">
+        <select id="miscFurikaeTakeStart" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:8px 10px;font-size:14px;background:var(--card);color:var(--text);"></select>
         <span style="color:var(--subtext);">〜</span>
-        <input type="time" id="miscFurikaeTakeEnd" step="900" style="flex:1;">
+        <select id="miscFurikaeTakeEnd" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:8px 10px;font-size:14px;background:var(--card);color:var(--text);"></select>
       </div>
     </div>
     <label>理由・内容</label>
@@ -1654,6 +1654,34 @@ function confirmReject() {
 }
 
 // ============================================================
+//  共通：15分刻み時間セレクト生成（6:00〜22:00）
+// ============================================================
+// selId     : select要素のid
+// withEmpty : 先頭に空白選択肢を入れるか（任意フィールド用）
+// setValue  : 初期選択値（"HH:MM" 形式）
+function buildTimeSel15(selId, withEmpty, setValue) {
+  const sel = document.getElementById(selId);
+  if (!sel) return;
+  const prev = setValue !== undefined ? setValue : sel.value;
+  sel.innerHTML = '';
+  if (withEmpty) {
+    const opt = document.createElement('option');
+    opt.value = ''; opt.textContent = '-- : --';
+    sel.appendChild(opt);
+  }
+  for (let h = 6; h <= 22; h++) {
+    for (const m of [0, 15, 30, 45]) {
+      if (h === 22 && m > 0) continue;
+      const label = String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
+      const opt = document.createElement('option');
+      opt.value = label; opt.textContent = label;
+      if (label === prev) opt.selected = true;
+      sel.appendChild(opt);
+    }
+  }
+}
+
+// ============================================================
 //  早出申請
 // ============================================================
 function buildEarlyTimes() {
@@ -1767,14 +1795,14 @@ function showHolidayModal() {
   _holidayReapply = null;
   document.getElementById('modalHolidayTitle').textContent = '🏢 休日出勤申請';
   document.getElementById('holidayWorkDate').value = todayKey();
-  document.getElementById('holidayStartTime').value = '';
-  document.getElementById('holidayEndTime').value = '';
+  buildTimeSel15('holidayStartTime', false, '08:00');
+  buildTimeSel15('holidayEndTime',   false, '17:15');
+  buildTimeSel15('compTimeStart', true, '');
+  buildTimeSel15('compTimeEnd',   true, '');
   document.getElementById('holidayReason').value = '';
   document.getElementById('compNo').checked = true;
   document.getElementById('compDateSection').style.display = 'none';
   document.getElementById('compDate').value = '';
-  document.getElementById('compTimeStart').value = '';
-  document.getElementById('compTimeEnd').value = '';
   document.getElementById('modalHoliday').classList.add('show');
 }
 
@@ -1786,22 +1814,22 @@ function showHolidayReapplyModal(dateKey, idx) {
   _holidayReapply = { dateKey, idx };
   document.getElementById('modalHolidayTitle').textContent = '🔄 休日出勤 再申請';
   document.getElementById('holidayWorkDate').value = app.workDate || dateKey;
-  document.getElementById('holidayStartTime').value = app.startTime || '';
-  document.getElementById('holidayEndTime').value = app.endTime || '';
+  buildTimeSel15('holidayStartTime', false, app.startTime || '08:00');
+  buildTimeSel15('holidayEndTime',   false, app.endTime   || '17:15');
   document.getElementById('holidayReason').value = app.reason || '';
   if (app.wantComp) {
     document.getElementById('compYes').checked = true;
     document.getElementById('compDateSection').style.display = '';
     document.getElementById('compDate').value = app.compDate || '';
     const times = (app.compTime || '').split('〜');
-    document.getElementById('compTimeStart').value = times[0] || '';
-    document.getElementById('compTimeEnd').value = times[1] || '';
+    buildTimeSel15('compTimeStart', true, times[0] || '');
+    buildTimeSel15('compTimeEnd',   true, times[1] || '');
   } else {
     document.getElementById('compNo').checked = true;
     document.getElementById('compDateSection').style.display = 'none';
     document.getElementById('compDate').value = '';
-    document.getElementById('compTimeStart').value = '';
-    document.getElementById('compTimeEnd').value = '';
+    buildTimeSel15('compTimeStart', true, '');
+    buildTimeSel15('compTimeEnd',   true, '');
   }
   document.getElementById('modalHoliday').classList.add('show');
 }
@@ -1856,15 +1884,15 @@ function showMiscModal() {
   document.getElementById('miscDate').value = todayKey();
   document.getElementById('miscEndDate').value = todayKey();
   document.getElementById('miscSubType').value = '遅刻';
-  document.getElementById('miscStartTime').value = '';
-  document.getElementById('miscEndTime').value = '';
+  buildTimeSel15('miscStartTime', true, '');
+  buildTimeSel15('miscEndTime',   true, '');
   document.getElementById('miscReason').value = '';
   document.getElementById('miscFurikaeWorkDate').value  = todayKey();
-  document.getElementById('miscFurikaeWorkStart').value = '';
-  document.getElementById('miscFurikaeWorkEnd').value   = '';
+  buildTimeSel15('miscFurikaeWorkStart', false, '08:00');
+  buildTimeSel15('miscFurikaeWorkEnd',   false, '17:15');
   document.getElementById('miscFurikaeTakeDate').value  = '';
-  document.getElementById('miscFurikaeTakeStart').value = '';
-  document.getElementById('miscFurikaeTakeEnd').value   = '';
+  buildTimeSel15('miscFurikaeTakeStart', true, '');
+  buildTimeSel15('miscFurikaeTakeEnd',   true, '');
   updateMiscFields();
   document.getElementById('modalMisc').classList.add('show');
 }

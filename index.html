@@ -629,9 +629,9 @@
     <input type="date" id="holidayWorkDate"/>
     <label>勤務時間</label>
     <div style="display:flex;align-items:center;gap:8px;">
-      <input type="time" id="holidayStartTime" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;"/>
+      <input type="time" id="holidayStartTime" step="900" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;"/>
       <span style="color:var(--subtext);">〜</span>
-      <input type="time" id="holidayEndTime" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;"/>
+      <input type="time" id="holidayEndTime" step="900" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;"/>
     </div>
     <label>理由</label>
     <textarea id="holidayReason" placeholder="休日出勤の理由を入力してください"></textarea>
@@ -645,9 +645,9 @@
       <input type="date" id="compDate"/>
       <label>希望時間帯（任意）</label>
       <div style="display:flex;align-items:center;gap:8px;">
-        <input type="time" id="compTimeStart" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;">
+        <input type="time" id="compTimeStart" step="900" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;">
         <span style="color:var(--subtext);">〜</span>
-        <input type="time" id="compTimeEnd" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;">
+        <input type="time" id="compTimeEnd" step="900" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;">
       </div>
     </div>
     <div class="modal-buttons">
@@ -681,9 +681,9 @@
     <div id="miscTimeGroup">
       <label id="miscTimeLabel">時間（開始〜終了）</label>
       <div style="display:flex;gap:8px;align-items:center;">
-        <input type="time" id="miscStartTime" style="flex:1;">
+        <input type="time" id="miscStartTime" step="900" style="flex:1;">
         <span style="color:var(--subtext);">〜</span>
-        <input type="time" id="miscEndTime" style="flex:1;">
+        <input type="time" id="miscEndTime" step="900" style="flex:1;">
       </div>
     </div>
     <!-- 振替専用フィールド -->
@@ -692,17 +692,17 @@
       <input type="date" id="miscFurikaeWorkDate" style="width:100%;box-sizing:border-box;">
       <label>勤務時間</label>
       <div style="display:flex;gap:8px;align-items:center;">
-        <input type="time" id="miscFurikaeWorkStart" style="flex:1;">
+        <input type="time" id="miscFurikaeWorkStart" step="900" style="flex:1;">
         <span style="color:var(--subtext);">〜</span>
-        <input type="time" id="miscFurikaeWorkEnd" style="flex:1;">
+        <input type="time" id="miscFurikaeWorkEnd" step="900" style="flex:1;">
       </div>
       <label>振替休日</label>
       <input type="date" id="miscFurikaeTakeDate" style="width:100%;box-sizing:border-box;">
       <label>振替時間</label>
       <div style="display:flex;gap:8px;align-items:center;">
-        <input type="time" id="miscFurikaeTakeStart" style="flex:1;">
+        <input type="time" id="miscFurikaeTakeStart" step="900" style="flex:1;">
         <span style="color:var(--subtext);">〜</span>
-        <input type="time" id="miscFurikaeTakeEnd" style="flex:1;">
+        <input type="time" id="miscFurikaeTakeEnd" step="900" style="flex:1;">
       </div>
     </div>
     <label>理由・内容</label>

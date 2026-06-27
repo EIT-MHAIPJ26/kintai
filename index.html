@@ -554,11 +554,22 @@
 <!-- 残業申請モーダル -->
 <div class="modal-overlay" id="modalOt" onclick="closeModalBg(event,'modalOt')">
   <div class="modal">
-    <h3>🕐 残業申請</h3>
+    <h3 id="modalOtTitle">🕐 残業申請</h3>
+    <!-- 再申請時のみ表示 -->
+    <div id="otReapplySection" style="display:none;">
+      <div style="background:#F2F2F7;border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:13px;">
+        現在の承認時刻：<strong id="otReapplyCurrentEnd" style="color:var(--purple);">--:--</strong>
+      </div>
+    </div>
     <label>残業予定終了時刻</label>
     <select id="otTime"></select>
     <label>残業理由</label>
     <textarea id="otReason" placeholder="残業の理由を入力してください"></textarea>
+    <!-- 再申請時のみ表示 -->
+    <div id="otReapplyReasonSection" style="display:none;">
+      <label style="color:var(--purple);">再申請理由</label>
+      <textarea id="otReapplyReason" placeholder="変更・再申請の理由を入力してください"></textarea>
+    </div>
     <div class="modal-buttons">
       <button class="btn-cancel" onclick="hideModal('modalOt')">キャンセル</button>
       <button class="btn-confirm purple" onclick="submitOt()">申請する</button>
@@ -635,6 +646,11 @@
     </div>
     <label>理由</label>
     <textarea id="holidayReason" placeholder="休日出勤の理由を入力してください"></textarea>
+    <!-- 再申請時のみ表示 -->
+    <div id="holidayReapplySection" style="display:none;">
+      <label style="color:var(--danger);">再申請理由</label>
+      <textarea id="holidayReapplyReason" placeholder="変更・再申請の理由を入力してください"></textarea>
+    </div>
     <label>振替希望</label>
     <div class="radio-group">
       <label><input type="radio" name="holidayComp" id="compYes" value="yes" onchange="toggleCompDate()"> あり</label>
@@ -1457,21 +1473,55 @@ function buildOtTimes() {
 }
 buildOtTimes();
 
+let _otReapply = null; // { dateKey } 残業再申請時にセット
+
 function showOtModal() {
   if (!currentUser) return;
   const rec = getTodayRec();
   if (rec.ot) {
     if (rec.ot.status === 'pending') { showToast('申請中です。承認をお待ちください'); return; }
     if (rec.ot.status === 'approved') {
-      // 承認済み → 延長申請へ
+      // 承認済み → 延長申請へ（申請状況タブからの再申請はshowOtReapplyModal使用）
       const ext = rec.ot.extension;
       if (ext?.status === 'pending') { showToast('延長申請中です。承認をお待ちください'); return; }
       showOtExtModal();
       return;
     }
   }
+  _otReapply = null;
+  document.getElementById('modalOtTitle').textContent = '🕐 残業申請';
+  document.getElementById('otReapplySection').style.display = 'none';
+  document.getElementById('otReapplyReasonSection').style.display = 'none';
+  document.getElementById('otReapplyReason').value = '';
   document.getElementById('otReason').value = '';
   if (rec.ot?.plannedEnd) document.getElementById('otTime').value = rec.ot.plannedEnd;
+  document.getElementById('modalOt').classList.add('show');
+}
+
+function showOtReapplyModal(dateKey) {
+  if (!currentUser) return;
+  const rec = getRecByKey(currentUser, dateKey);
+  if (!rec?.ot) return;
+  _otReapply = { dateKey };
+  document.getElementById('modalOtTitle').textContent = '🔄 残業 再申請';
+  document.getElementById('otReapplyCurrentEnd').textContent = rec.ot.plannedEnd || '--:--';
+  document.getElementById('otReapplySection').style.display = '';
+  document.getElementById('otReapplyReasonSection').style.display = '';
+  document.getElementById('otReapplyReason').value = '';
+  document.getElementById('otReason').value = rec.ot.reason || '';
+  // 時間帯を全範囲（17:30〜24:00）で再生成し、現在値を選択
+  const sel = document.getElementById('otTime');
+  sel.innerHTML = '';
+  for (let h = 17; h <= 24; h++) {
+    const mins = h === 17 ? [30,45] : h === 24 ? [0] : [0,15,30,45];
+    mins.forEach(m => {
+      const opt = document.createElement('option');
+      const label = String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');
+      opt.value = label; opt.textContent = label;
+      if (label === rec.ot.plannedEnd) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  }
   document.getElementById('modalOt').classList.add('show');
 }
 
@@ -1479,6 +1529,20 @@ function submitOt() {
   const plannedEnd = document.getElementById('otTime').value;
   const reason = document.getElementById('otReason').value.trim();
   if (!reason) { showToast('残業理由を入力してください'); return; }
+
+  if (_otReapply) {
+    const reapplyReason = document.getElementById('otReapplyReason').value.trim();
+    if (!reapplyReason) { showToast('再申請理由を入力してください'); return; }
+    const ctx = _otReapply;
+    _otReapply = null;
+    const rec = getRecByKey(currentUser, ctx.dateKey);
+    rec.ot = { plannedEnd, reason, reapplyReason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
+    saveData(); renderAll(); hideModal('modalOt');
+    notifyAdminsViaGAS('ot', plannedEnd+'まで （再申請：'+reapplyReason+'）', ctx.dateKey);
+    showToast('🔄 残業を再申請しました（'+plannedEnd+'まで）');
+    return;
+  }
+
   const rec = getTodayRec();
   rec.ot = { plannedEnd, reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
   saveData(); renderAll(); hideModal('modalOt');
@@ -1794,6 +1858,8 @@ function showHolidayModal() {
   if (!currentUser) return;
   _holidayReapply = null;
   document.getElementById('modalHolidayTitle').textContent = '🏢 休日出勤申請';
+  document.getElementById('holidayReapplySection').style.display = 'none';
+  document.getElementById('holidayReapplyReason').value = '';
   document.getElementById('holidayWorkDate').value = todayKey();
   buildTimeSel15('holidayStartTime', false, '08:00');
   buildTimeSel15('holidayEndTime',   false, '17:15');
@@ -1813,6 +1879,8 @@ function showHolidayReapplyModal(dateKey, idx) {
   if (!app) return;
   _holidayReapply = { dateKey, idx };
   document.getElementById('modalHolidayTitle').textContent = '🔄 休日出勤 再申請';
+  document.getElementById('holidayReapplySection').style.display = '';
+  document.getElementById('holidayReapplyReason').value = '';
   document.getElementById('holidayWorkDate').value = app.workDate || dateKey;
   buildTimeSel15('holidayStartTime', false, app.startTime || '08:00');
   buildTimeSel15('holidayEndTime',   false, app.endTime   || '17:15');
@@ -1850,9 +1918,10 @@ function submitHoliday() {
   if (!reason)    { showToast('理由を入力してください'); return; }
   if (wantComp && !compDate) { showToast('振替希望日を入力してください'); return; }
 
-  const newEntry = { workDate, startTime, endTime, wantComp, compDate: wantComp?compDate:'', compTime: wantComp?compTime:'', reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
-
   if (_holidayReapply) {
+    const reapplyReason = document.getElementById('holidayReapplyReason').value.trim();
+    if (!reapplyReason) { showToast('再申請理由を入力してください'); return; }
+    const newEntry = { workDate, startTime, endTime, wantComp, compDate: wantComp?compDate:'', compTime: wantComp?compTime:'', reason, reapplyReason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
     // 再申請：既存エントリを新しい内容で上書き
     const ctx = _holidayReapply;
     _holidayReapply = null;
@@ -1860,11 +1929,11 @@ function submitHoliday() {
     if (!Array.isArray(rec.holiday)) rec.holiday = [];
     rec.holiday[ctx.idx] = newEntry;
     saveData(); renderAll(); hideModal('modalHoliday');
-    // notifyAdminsViaGASがupsertRecord+notifyInfoを1回のPOSTで送る（ctx.dateKeyを使う）
-    notifyAdminsViaGAS('holiday', workDate+' '+startTime+'〜'+endTime+' （再申請）', ctx.dateKey);
+    notifyAdminsViaGAS('holiday', workDate+' '+startTime+'〜'+endTime+' （再申請：'+reapplyReason+'）', ctx.dateKey);
     showToast('🔄 休日出勤を再申請しました（'+startTime+'〜'+endTime+'）');
   } else {
     // 新規申請
+    const newEntry = { workDate, startTime, endTime, wantComp, compDate: wantComp?compDate:'', compTime: wantComp?compTime:'', reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
     const rec = getRecByKey(currentUser, workDate);
     if (!Array.isArray(rec.holiday)) rec.holiday = rec.holiday ? [rec.holiday] : [];
     const dup = rec.holiday.find(h => h.status !== 'rejected' && h.startTime === startTime && h.endTime === endTime);
@@ -2654,9 +2723,12 @@ function renderMyApplications() {
     const cancelBtn = app.status === 'pending'
       ? `<button onclick="cancelAppByDate('${typeInfo.key}','${dateKey}'${idxArg})" style="margin-left:8px;font-size:11px;padding:3px 9px;border:1px solid var(--danger);border-radius:6px;background:transparent;color:var(--danger);cursor:pointer;">取り消し</button>`
       : '';
-    const reapplyBtn = (typeInfo.key === 'holiday' && app.status === 'approved')
-      ? `<button onclick="showHolidayReapplyModal('${dateKey}',${appIdx})" style="margin-left:8px;font-size:11px;padding:3px 9px;border:1px solid var(--danger);border-radius:6px;background:transparent;color:var(--danger);cursor:pointer;">🔄 再申請</button>`
-      : '';
+    let reapplyBtn = '';
+    if (typeInfo.key === 'holiday' && app.status === 'approved') {
+      reapplyBtn = `<button onclick="showHolidayReapplyModal('${dateKey}',${appIdx})" style="margin-left:8px;font-size:11px;padding:3px 9px;border:1px solid var(--danger);border-radius:6px;background:transparent;color:var(--danger);cursor:pointer;">🔄 再申請</button>`;
+    } else if (typeInfo.key === 'ot' && app.status === 'approved') {
+      reapplyBtn = `<button onclick="showOtReapplyModal('${dateKey}')" style="margin-left:8px;font-size:11px;padding:3px 9px;border:1px solid var(--purple);border-radius:6px;background:transparent;color:var(--purple);cursor:pointer;">🔄 再申請</button>`;
+    }
 
     const item = document.createElement('div');
     item.className = 'myapp-item';

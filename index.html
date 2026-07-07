@@ -991,7 +991,7 @@ function syncRecordToGAS(name, dateKey, notifyInfo) {
   if (!gasUrl) return;
   const rec = getRecByKey(name, dateKey);
   updateSyncIndicator('syncing');
-  const body = { action:'upsertRecord', name, date:dateKey, pairs:rec.pairs||[], ot:rec.ot||null, early:rec.early||null, paid:rec.paid||null, holiday:rec.holiday||null, misc:rec.misc||null, updatedAt:rec.updatedAt||0 };
+  const body = { action:'upsertRecord', name, date:dateKey, pairs:rec.pairs||[], ot:rec.ot||null, early:rec.early||null, paid:rec.paid||null, holiday:rec.holiday||null, misc:rec.misc||null, corrReq:rec.corrReq||[], updatedAt:rec.updatedAt||0 };
   if (notifyInfo) body.notifyInfo = notifyInfo;
   fetch(gasUrl, {
     method: 'POST',
@@ -1036,6 +1036,7 @@ function fetchAllFromGAS(onDone) {
             if (rec.early) data.records[name][dk].early   = rec.early;
             if (Array.isArray(rec.paid)    && rec.paid.length    > 0) data.records[name][dk].paid    = rec.paid;
             if (Array.isArray(rec.holiday) && rec.holiday.length > 0) data.records[name][dk].holiday = rec.holiday;
+            if (Array.isArray(rec.corrReq) && rec.corrReq.length > 0) data.records[name][dk].corrReq = rec.corrReq;
           }
           return;
         }
@@ -1091,7 +1092,7 @@ function notifyAdminsViaGAS(type, detail, date) {
   const dateKey = date || todayKey();
   const rec = getRecByKey(currentUser, dateKey);
   updateSyncIndicator('syncing');
-  const body = { action:'upsertRecord', name:currentUser, date:dateKey, pairs:rec.pairs||[], ot:rec.ot||null, early:rec.early||null, paid:rec.paid||null, holiday:rec.holiday||null, misc:rec.misc||null, updatedAt:rec.updatedAt||0, notifyInfo };
+  const body = { action:'upsertRecord', name:currentUser, date:dateKey, pairs:rec.pairs||[], ot:rec.ot||null, early:rec.early||null, paid:rec.paid||null, holiday:rec.holiday||null, misc:rec.misc||null, corrReq:rec.corrReq||[], updatedAt:rec.updatedAt||0, notifyInfo };
   fetch(gasUrl, { method:'POST', mode:'no-cors', body: JSON.stringify(body) })
     .then(() => updateSyncIndicator('ok'))
     .catch(() => {});
@@ -2130,6 +2131,8 @@ function markCorrReqDone(name, dateKey, idx) {
   rec.corrReq[idx].doneBy = currentUser;
   rec.corrReq[idx].doneAt = Date.now();
   saveData();
+  // GASに同期（別端末でも反映されるよう）
+  syncRecordToGAS(name, dateKey);
   renderApprovalList();
   renderApprovalTab();
   showToast('✅ 対応済みにしました');

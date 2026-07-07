@@ -211,6 +211,11 @@
     /* 管理者：打刻修正ボタン */
     .btn-edit-time{font-size:12px;padding:4px 10px;border:1.5px solid var(--border);border-radius:8px;background:white;color:var(--subtext);cursor:pointer;white-space:nowrap;}
     .btn-edit-time:hover{border-color:var(--blue);color:var(--blue);}
+    .btn-corr-req{background:linear-gradient(135deg,#FF9500,#FFCC00);color:#fff;}
+    .corr-type-btn{flex:1;padding:10px;border-radius:10px;border:2px solid var(--border);background:white;color:var(--text);font-size:13px;cursor:pointer;font-weight:600;}
+    .corr-type-btn.active{border-color:var(--blue);background:var(--blue);color:white;}
+    .corr-req-item{background:#FFF8EC;border:1px solid #FFCC80;border-radius:12px;padding:12px 14px;margin-bottom:10px;}
+    .corr-req-done{background:#F2F2F7;border-color:var(--border);}
 
     /* エクスポートボタン */
     .export-btn{width:100%;padding:13px;background:white;color:var(--primary);border:1.5px solid var(--primary);border-radius:12px;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:14px;}
@@ -401,10 +406,9 @@
     <div id="miscStatusBar" style="display:none"></div>
     <!-- 今日以降の申請一覧 -->
     <div id="upcomingApps" style="display:none;margin-top:10px;border-top:1px solid var(--border);padding-top:10px;"></div>
-    <!-- 管理者：打刻修正ボタン -->
-    <div id="adminEditArea" style="display:none;margin-top:12px;gap:8px;flex-wrap:wrap;">
-      <button class="btn-edit-time" onclick="showEditModal()">✏️ 打刻を修正する</button>
-      <button class="btn-edit-time" onclick="showEditAppModal()" style="border-color:var(--purple);color:var(--purple);">✏️ 申請時間を修正する</button>
+    <!-- 管理者：修正ボタン（統合） -->
+    <div id="adminEditArea" style="display:none;margin-top:12px;">
+      <button class="btn-edit-time" style="width:100%;padding:8px 14px;font-size:13px;font-weight:700;border-color:var(--purple);color:var(--purple);" onclick="showAdminCorrMenu()">✏️ 打刻・申請を修正する</button>
     </div>
   </div>
 
@@ -431,9 +435,13 @@
     <button class="btn-apply btn-holiday-g" id="btnHoliday" onclick="showHolidayModal()">
       <span class="icon">🏢</span>休日出勤
     </button>
-    <button class="btn-apply" style="background:linear-gradient(135deg,#32ADE6,#5AC8FA);color:#fff;grid-column:1/-1;" onclick="showMiscModal()">
+    <button class="btn-apply" style="background:linear-gradient(135deg,#32ADE6,#5AC8FA);color:#fff;" onclick="showMiscModal()">
       <span style="font-size:28px">📋</span>
       その他申請
+    </button>
+    <button class="btn-apply btn-corr-req" id="btnCorrReq" onclick="showCorrReqModal()">
+      <span style="font-size:28px">🔧</span>
+      修正依頼
     </button>
   </div>
 
@@ -776,6 +784,67 @@
   </div>
 </div>
 
+<!-- 修正依頼モーダル（メンバー） -->
+<div class="modal-overlay" id="modalCorrReq" onclick="closeModalBg(event,'modalCorrReq')">
+  <div class="modal">
+    <h3>🔧 修正依頼</h3>
+    <label>対象の日付</label>
+    <input type="date" id="corrReqDate"/>
+    <label>依頼の種類</label>
+    <div style="display:flex;gap:8px;margin-bottom:14px;">
+      <button id="corrTypeClockBtn" class="corr-type-btn active" onclick="setCorrReqType('clock')">🕐 打刻忘れ・修正</button>
+      <button id="corrTypeAppBtn" class="corr-type-btn" onclick="setCorrReqType('apptime')">📝 申請時間変更</button>
+    </div>
+    <div id="corrClockSection">
+      <label>修正後の出勤時刻</label>
+      <select id="corrClockIn" style="width:100%;padding:10px;border-radius:10px;border:1.5px solid var(--border);font-size:14px;"></select>
+      <label>修正後の退勤時刻（なければ空欄）</label>
+      <select id="corrClockOut" style="width:100%;padding:10px;border-radius:10px;border:1.5px solid var(--border);font-size:14px;"></select>
+    </div>
+    <div id="corrAppSection" style="display:none;">
+      <label>変更したい申請</label>
+      <select id="corrAppType" style="width:100%;padding:10px;border-radius:10px;border:1.5px solid var(--border);font-size:14px;">
+        <option value="ot">🕐 残業申請</option>
+        <option value="early">🌅 早出申請</option>
+        <option value="paid">📅 有給申請</option>
+        <option value="holiday">🏢 休日出勤申請</option>
+        <option value="misc">📋 その他申請</option>
+      </select>
+      <label>変更したい内容</label>
+      <textarea id="corrAppDetail" placeholder="例：残業終了を20:00→21:00に変更したい" style="height:68px;"></textarea>
+    </div>
+    <label>依頼理由</label>
+    <textarea id="corrReqReason" placeholder="打刻忘れ・変更の理由を入力してください" style="height:68px;"></textarea>
+    <div class="modal-buttons">
+      <button class="btn-cancel" onclick="hideModal('modalCorrReq')">キャンセル</button>
+      <button class="btn-confirm blue" onclick="submitCorrReq()">依頼する</button>
+    </div>
+  </div>
+</div>
+
+<!-- 管理者修正メニューモーダル -->
+<div class="modal-overlay" id="modalAdminCorrMenu" onclick="closeModalBg(event,'modalAdminCorrMenu')">
+  <div class="modal" style="max-width:320px;">
+    <h3>✏️ 修正・依頼確認</h3>
+    <button onclick="hideModal('modalAdminCorrMenu');showEditModal()"
+      style="width:100%;padding:14px;margin-bottom:10px;border:1.5px solid var(--blue);border-radius:12px;background:var(--blue-light,#EAF4FF);color:var(--blue);font-size:14px;font-weight:700;cursor:pointer;text-align:left;">
+      🕐 打刻を修正する
+    </button>
+    <button onclick="hideModal('modalAdminCorrMenu');showEditAppModal()"
+      style="width:100%;padding:14px;margin-bottom:10px;border:1.5px solid var(--purple);border-radius:12px;background:var(--purple-light,#F3EEFF);color:var(--purple);font-size:14px;font-weight:700;cursor:pointer;text-align:left;">
+      📝 申請時間を修正する
+    </button>
+    <button onclick="hideModal('modalAdminCorrMenu');showCorrReqList()"
+      style="width:100%;padding:14px;border:1.5px solid #FF9500;border-radius:12px;background:#FFF8EC;color:#FF9500;font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:space-between;">
+      <span>🔧 修正依頼を確認する</span>
+      <span id="corrReqMenuBadge" style="display:none;background:#FF9500;color:white;border-radius:50%;width:22px;height:22px;font-size:11px;align-items:center;justify-content:center;font-weight:700;"></span>
+    </button>
+    <div class="modal-buttons" style="margin-top:16px;">
+      <button class="btn-cancel" onclick="hideModal('modalAdminCorrMenu')" style="width:100%;">閉じる</button>
+    </div>
+  </div>
+</div>
+
 <!-- パスワード設定モーダル（管理者のみ） -->
 <div class="modal-overlay" id="modalSetPassword" onclick="closeModalBg(event,'modalSetPassword')">
   <div class="modal">
@@ -1017,7 +1086,7 @@ function saveNotifEmail() {
 // 申請送信時: syncRecordToGAS に通知情報を乗せて1回のPOSTで完結させる
 function notifyAdminsViaGAS(type, detail, date) {
   if (!gasUrl) return;
-  const typeNames = { ot:'残業申請', otExt:'残業延長申請', early:'早出申請', paid:'有給申請', holiday:'休日出勤申請', misc:'その他申請' };
+  const typeNames = { ot:'残業申請', otExt:'残業延長申請', early:'早出申請', paid:'有給申請', holiday:'休日出勤申請', misc:'その他申請', corrReq:'打刻・申請修正依頼' };
   const notifyInfo = { name: currentUser, typeName: typeNames[type] || type, detail, date: date || todayKey() };
   const dateKey = date || todayKey();
   const rec = getRecByKey(currentUser, dateKey);
@@ -1116,6 +1185,7 @@ function migrateRec(rec) {
   if (!('paid'      in rec)) rec.paid      = [];
   if (!('holiday'   in rec)) rec.holiday   = [];
   if (!('misc'      in rec)) rec.misc      = [];
+  if (!('corrReq'   in rec)) rec.corrReq   = [];
   if (!('updatedAt' in rec)) rec.updatedAt = 0;
   // 旧形式（単体オブジェクト）→配列に変換
   if (rec.paid && !Array.isArray(rec.paid)) rec.paid = [rec.paid];
@@ -1966,6 +2036,103 @@ function submitHoliday() {
     notifyAdminsViaGAS('holiday', workDate+' '+startTime+'〜'+endTime, workDate);
     showToast('🏢 休日出勤申請を送信しました（'+startTime+'〜'+endTime+'）');
   }
+}
+
+// ============================================================
+//  修正依頼（メンバー）
+// ============================================================
+function setCorrReqType(type) {
+  document.getElementById('corrClockSection').style.display = type === 'clock' ? '' : 'none';
+  document.getElementById('corrAppSection').style.display   = type === 'apptime' ? '' : 'none';
+  const clkBtn = document.getElementById('corrTypeClockBtn');
+  const appBtn = document.getElementById('corrTypeAppBtn');
+  clkBtn.classList.toggle('active', type === 'clock');
+  appBtn.classList.toggle('active', type === 'apptime');
+}
+
+function showCorrReqModal() {
+  if (!currentUser) return;
+  document.getElementById('corrReqDate').value = todayKey();
+  setCorrReqType('clock');
+  buildTimeSel15('corrClockIn',  true, '');
+  buildTimeSel15('corrClockOut', true, '');
+  document.getElementById('corrReqReason').value = '';
+  document.getElementById('corrAppDetail').value = '';
+  document.getElementById('modalCorrReq').classList.add('show');
+}
+
+function submitCorrReq() {
+  const date   = document.getElementById('corrReqDate').value;
+  if (!date) { showToast('日付を選択してください'); return; }
+  const isClock  = document.getElementById('corrClockSection').style.display !== 'none';
+  const reason   = document.getElementById('corrReqReason').value.trim();
+  if (!reason) { showToast('依頼理由を入力してください'); return; }
+
+  let clockIn = '', clockOut = '', appType = '', appDetail = '';
+  if (isClock) {
+    clockIn  = document.getElementById('corrClockIn').value;
+    clockOut = document.getElementById('corrClockOut').value;
+    if (!clockIn) { showToast('出勤時刻を選択してください'); return; }
+  } else {
+    appType   = document.getElementById('corrAppType').value;
+    appDetail = document.getElementById('corrAppDetail').value.trim();
+    if (!appDetail) { showToast('変更内容を入力してください'); return; }
+  }
+
+  const req = {
+    type: isClock ? 'clock' : 'apptime',
+    clockIn, clockOut, appType, appDetail,
+    reason, status: 'pending',
+    requestedAt: Date.now(), doneBy: null, doneAt: null
+  };
+
+  const rec = getRecByKey(currentUser, date);
+  if (!Array.isArray(rec.corrReq)) rec.corrReq = [];
+  rec.corrReq.push(req);
+  saveData();
+  hideModal('modalCorrReq');
+
+  const appTypeLabels = { ot:'残業申請', early:'早出申請', paid:'有給申請', holiday:'休日出勤申請', misc:'その他申請' };
+  const detail = isClock
+    ? `出勤：${clockIn}${clockOut ? ' 退勤：'+clockOut : ''}`
+    : `${appTypeLabels[appType]||appType}：${appDetail}`;
+  notifyAdminsViaGAS('corrReq', detail, date);
+  showToast('🔧 修正依頼を送信しました');
+}
+
+// 管理者：修正メニュー
+function showAdminCorrMenu() {
+  let cnt = 0;
+  getUserNames().forEach(name => {
+    Object.values(getUserRecords(name)).forEach(r => {
+      const rec = migrateRec(r);
+      if (Array.isArray(rec.corrReq)) cnt += rec.corrReq.filter(c => c.status === 'pending').length;
+    });
+  });
+  const badge = document.getElementById('corrReqMenuBadge');
+  if (badge) { badge.textContent = cnt; badge.style.display = cnt > 0 ? 'inline-flex' : 'none'; }
+  document.getElementById('modalAdminCorrMenu').classList.add('show');
+}
+
+function showCorrReqList() {
+  switchTab('approval');
+  // 承認タブに遷移して修正依頼セクションにスクロール
+  setTimeout(() => {
+    const el = document.getElementById('corrReqSection');
+    if (el) el.scrollIntoView({ behavior:'smooth', block:'start' });
+  }, 100);
+}
+
+function markCorrReqDone(name, dateKey, idx) {
+  const rec = getRecByKey(name, dateKey);
+  if (!Array.isArray(rec.corrReq) || !rec.corrReq[idx]) return;
+  rec.corrReq[idx].status = 'done';
+  rec.corrReq[idx].doneBy = currentUser;
+  rec.corrReq[idx].doneAt = Date.now();
+  saveData();
+  renderApprovalList();
+  renderApprovalTab();
+  showToast('✅ 対応済みにしました');
 }
 
 // ============================================================
@@ -2885,6 +3052,8 @@ function renderApprovalTab() {
       });
       // 延長申請も集計
       if(rec.ot?.status==='approved' && rec.ot?.extension?.status==='pending') count++;
+      // 修正依頼も集計
+      if(Array.isArray(rec.corrReq)) count += rec.corrReq.filter(c=>c.status==='pending').length;
     });
   });
   const badge=document.getElementById('approvalBadge');
@@ -2992,6 +3161,67 @@ function renderApprovalList() {
       ${actionHtml}`;
     list.appendChild(item);
   });
+
+  // ── 修正依頼セクション ──────────────────────────────────────
+  const corrItems = [];
+  getUserNames().forEach(name => {
+    Object.entries(getUserRecords(name)).forEach(([dateKey, r]) => {
+      const rec = migrateRec(r);
+      if (!Array.isArray(rec.corrReq)) return;
+      rec.corrReq.forEach((req, idx) => {
+        corrItems.push({ name, dateKey, req, idx });
+      });
+    });
+  });
+  // 未対応→対応済みの順、同じステータス内は日付新しい順
+  corrItems.sort((a, b) => {
+    const o = { pending: 0, done: 1 };
+    return (o[a.req.status]??2) - (o[b.req.status]??2) || b.dateKey.localeCompare(a.dateKey);
+  });
+  if (corrItems.length > 0) {
+    const secDiv = document.createElement('div');
+    secDiv.id = 'corrReqSection';
+    secDiv.style.cssText = 'font-size:12px;font-weight:700;color:var(--subtext);margin:16px 0 8px;padding-left:4px;border-top:1px solid var(--border);padding-top:10px;';
+    secDiv.textContent = '🔧 打刻・申請修正依頼';
+    list.appendChild(secDiv);
+
+    const appTypeLabels = { ot:'残業申請', early:'早出申請', paid:'有給申請', holiday:'休日出勤申請', misc:'その他申請' };
+    let lastCorrStatus = '';
+    corrItems.forEach(({ name, dateKey, req, idx }) => {
+      if (req.status !== lastCorrStatus) {
+        const sub = document.createElement('div');
+        sub.style.cssText = 'font-size:11px;color:var(--subtext);margin:8px 0 4px;';
+        sub.textContent = req.status === 'pending' ? '⏳ 未対応' : '✅ 対応済み';
+        list.appendChild(sub);
+        lastCorrStatus = req.status;
+      }
+      const d = new Date(dateKey.replace(/-/g, '/'));
+      const dateStr = (d.getMonth()+1)+'/'+d.getDate()+'（'+WEEKDAYS[d.getDay()]+'）';
+      const typeLabel = req.type === 'clock' ? '打刻修正' : '申請時間変更';
+      let detail = '';
+      if (req.type === 'clock') {
+        detail = `出勤：<strong>${req.clockIn}</strong>${req.clockOut ? ' 退勤：<strong>'+req.clockOut+'</strong>' : ''}`;
+      } else {
+        detail = `${appTypeLabels[req.appType]||req.appType}：${req.appDetail}`;
+      }
+      const doneTxt = req.doneBy ? `<span style="font-size:11px;color:var(--subtext);">（${req.doneBy}が対応）</span>` : '';
+      const item = document.createElement('div');
+      item.className = 'corr-req-item' + (req.status === 'done' ? ' corr-req-done' : '');
+      item.innerHTML = `
+        <div class="approval-header">
+          <span class="approval-name">👤 ${name}</span>
+          <span class="approval-date">${dateStr} <span style="font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px;background:#FFF0DC;">${typeLabel}</span></span>
+        </div>
+        <div class="approval-detail" style="margin:6px 0 4px;">🔧 ${detail} ${doneTxt}</div>
+        <div class="approval-reason">📝 ${req.reason||'（理由なし）'}</div>
+        ${req.status === 'pending' ? `
+        <div class="approval-buttons">
+          <button class="btn-approve" style="background:#FF9500;" onclick="markCorrReqDone('${name}','${dateKey}',${idx})">✅ 対応済みにする</button>
+          <button class="btn-approve" style="background:var(--purple);" onclick="hideModal('modalAdminCorrMenu');showEditModal()">🕐 打刻修正を開く</button>
+        </div>` : ''}`;
+      list.appendChild(item);
+    });
+  }
 }
 
 // 管理者による承認取り消し

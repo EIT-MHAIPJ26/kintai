@@ -1322,6 +1322,10 @@ function renderMemberList() {
       </div>
       <div class="member-actions">
         <button class="btn-switch-user" onclick="showSetPasswordModal('${n}')" title="パスワード設定" style="font-size:13px;">🔑</button>
+        <button onclick="toggleUserRole('${n}')" title="${role==='admin'?'メンバーに変更':'管理者に変更'}"
+          style="font-size:11px;padding:3px 8px;border-radius:6px;border:1px solid ${role==='admin'?'var(--purple)':'var(--primary)'};background:transparent;color:${role==='admin'?'var(--purple)':'var(--primary)'};cursor:pointer;">
+          ${role==='admin'?'→メンバー':'→管理者'}
+        </button>
         ${!isActive?`<button class="btn-switch-user" onclick="switchToUser('${n}')">切替</button>`:''}
         <button class="btn-del-member" onclick="deleteMember('${n}')" title="削除">✕</button>
       </div>`;
@@ -1345,6 +1349,25 @@ function deleteMember(name) {
   renderMemberList();
   renderAll();
   showToast('🗑️ '+name+' を削除しました');
+}
+
+function toggleUserRole(name) {
+  const current = getUserRole(name);
+  const newRole = current === 'admin' ? 'member' : 'admin';
+  if (newRole === 'member' && name === currentUser) {
+    showToast('自分自身を管理者から外すことはできません');
+    return;
+  }
+  if (!confirm(`「${name}」を${newRole==='admin'?'管理者':'メンバー'}に変更しますか？`)) return;
+  data.users = data.users.map(u => {
+    const n = typeof u === 'string' ? u : u.name;
+    if (n === name) return { name: n, role: newRole };
+    return u;
+  });
+  saveData();
+  renderMemberList();
+  renderAll();
+  showToast(`✅ ${name} を${newRole==='admin'?'🔑 管理者':'👤 メンバー'}に変更しました`);
 }
 
 function switchAddTab(mode) {

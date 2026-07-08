@@ -888,6 +888,23 @@
   </div>
 </div>
 
+<!-- 打刻確認モーダル -->
+<div class="modal-overlay" id="modalClockConfirm">
+  <div class="modal" style="text-align:center;max-width:300px;">
+    <div id="clockConfirmIcon" style="font-size:48px;margin-bottom:8px;">☀️</div>
+    <h3 id="clockConfirmTitle" style="margin-bottom:4px;">出勤確認</h3>
+    <div style="font-size:13px;color:var(--subtext);margin-bottom:16px;" id="clockConfirmSub">この時刻で出勤しますか？</div>
+    <div style="background:var(--green-light,#E8F9EE);border-radius:14px;padding:16px;margin-bottom:20px;">
+      <div style="font-size:13px;color:var(--subtext);margin-bottom:4px;">現在時刻</div>
+      <div id="clockConfirmTime" style="font-size:40px;font-weight:800;color:var(--primary);letter-spacing:2px;">00:00</div>
+    </div>
+    <div class="modal-buttons">
+      <button class="btn-cancel" onclick="cancelClockConfirm()">キャンセル</button>
+      <button class="btn-confirm" id="clockConfirmBtn" onclick="executeClockAction()">OK</button>
+    </div>
+  </div>
+</div>
+
 <!-- 出勤リマインダーバナー -->
 <div class="checkin-banner" id="checkinBanner" style="display:none">
   <span class="rb-icon">🌅</span>
@@ -1484,30 +1501,70 @@ document.getElementById('newUserName').addEventListener('keydown', e=>{ if(e.key
 // ============================================================
 //  打刻
 // ============================================================
+let _clockAction = null; // 'in' or 'out'
+let _clockConfirmTimer = null;
+
 function clockIn() {
   if (!currentUser) { showToast('先にログインしてください'); return; }
   const rec = getTodayRec();
   if (isCurrentlyWorking(rec)) { showToast('すでに出勤中です'); return; }
-  rec.pairs.push({ in: Date.now(), out: null });
-  rec.updatedAt = Date.now();
-  saveData(); renderAll();
-  syncRecordToGAS(currentUser, todayKey());
-  showToast('☀️ 出勤しました！ '+fmtTime(rec.pairs[rec.pairs.length-1].in));
-  // 出勤打刻でリマインダーを即座に非表示
-  document.getElementById('checkinBanner').style.display = 'none';
+  _showClockConfirm('in');
 }
 
 function clockOut() {
   if (!currentUser) return;
   const rec = getTodayRec();
   if (!isCurrentlyWorking(rec)) { showToast('出勤打刻がありません'); return; }
-  const lastPair = rec.pairs[rec.pairs.length-1];
-  lastPair.out = Date.now();
-  const min = Math.floor((lastPair.out - lastPair.in)/60000);
-  rec.updatedAt = Date.now();
-  saveData(); renderAll();
-  syncRecordToGAS(currentUser, todayKey());
-  showToast('🌙 退勤しました！ '+fmtMin(min));
+  _showClockConfirm('out');
+}
+
+function _showClockConfirm(action) {
+  _clockAction = action;
+  const isIn = action === 'in';
+  document.getElementById('clockConfirmIcon').textContent  = isIn ? '☀️' : '🌙';
+  document.getElementById('clockConfirmTitle').textContent = isIn ? '出勤確認' : '退勤確認';
+  document.getElementById('clockConfirmSub').textContent   = isIn ? 'この時刻で出勤しますか？' : 'この時刻で退勤しますか？';
+  document.getElementById('clockConfirmBtn').className     = 'btn-confirm' + (isIn ? '' : ' blue');
+  // 時刻を1秒ごとに更新
+  const update = () => {
+    const now = new Date();
+    document.getElementById('clockConfirmTime').textContent =
+      String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+  };
+  update();
+  if (_clockConfirmTimer) clearInterval(_clockConfirmTimer);
+  _clockConfirmTimer = setInterval(update, 1000);
+  document.getElementById('modalClockConfirm').classList.add('show');
+}
+
+function executeClockAction() {
+  if (_clockConfirmTimer) { clearInterval(_clockConfirmTimer); _clockConfirmTimer = null; }
+  hideModal('modalClockConfirm');
+  if (_clockAction === 'in') {
+    const rec = getTodayRec();
+    rec.pairs.push({ in: Date.now(), out: null });
+    rec.updatedAt = Date.now();
+    saveData(); renderAll();
+    syncRecordToGAS(currentUser, todayKey());
+    showToast('☀️ 出勤しました！ ' + fmtTime(rec.pairs[rec.pairs.length-1].in));
+    document.getElementById('checkinBanner').style.display = 'none';
+  } else if (_clockAction === 'out') {
+    const rec = getTodayRec();
+    const lastPair = rec.pairs[rec.pairs.length-1];
+    lastPair.out = Date.now();
+    const min = Math.floor((lastPair.out - lastPair.in)/60000);
+    rec.updatedAt = Date.now();
+    saveData(); renderAll();
+    syncRecordToGAS(currentUser, todayKey());
+    showToast('🌙 退勤しました！ ' + fmtMin(min));
+  }
+  _clockAction = null;
+}
+
+function cancelClockConfirm() {
+  if (_clockConfirmTimer) { clearInterval(_clockConfirmTimer); _clockConfirmTimer = null; }
+  _clockAction = null;
+  hideModal('modalClockConfirm');
 }
 
 // ============================================================
@@ -2887,9 +2944,13 @@ function renderMyApplications() {
     });
   });
 
-  // 承認待ちを先に、日付の新しい順
+  // 承認待ちを先に、申請日時の新しい順
   const ord = { pending:0, approved:1, rejected:2 };
-  items.sort((a,b) => ord[a.app.status]-ord[b.app.status] || b.dateKey.localeCompare(a.dateKey));
+  items.sort((a,b) => {
+    const statusDiff = (ord[a.app.status]??3)-(ord[b.app.status]??3);
+    if(statusDiff!==0) return statusDiff;
+    return (b.app.appliedAt||0)-(a.app.appliedAt||0);
+  });
 
   // バッジ（承認待ち件数）
   const pendingCount = items.filter(i=>i.app.status==='pending').length;
@@ -3087,10 +3148,12 @@ function renderApprovalList() {
       }
     });
   });
-  // 承認待ち→承認済み→却下の順、同ステータス内は日付新しい順
+  // 承認待ち→承認済み→却下の順、同ステータス内は申請日時の新しい順
   items.sort((a,b)=>{
     const ord={pending:0,approved:1,rejected:2};
-    return (ord[a.app.status]??3)-(ord[b.app.status]??3)||b.dateKey.localeCompare(a.dateKey);
+    const statusDiff=(ord[a.app.status]??3)-(ord[b.app.status]??3);
+    if(statusDiff!==0) return statusDiff;
+    return (b.app.appliedAt||0)-(a.app.appliedAt||0);
   });
   if(items.length===0){list.innerHTML='<div class="empty-state">📭 申請はありません</div>';return;}
 

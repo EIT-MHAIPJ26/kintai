@@ -789,13 +789,21 @@
   <div class="modal">
     <h3>🔧 修正依頼</h3>
     <label>対象の日付</label>
-    <input type="date" id="corrReqDate"/>
+    <input type="date" id="corrReqDate" onchange="loadCorrReqCurrentRecord()"/>
     <label>依頼の種類</label>
     <div style="display:flex;gap:8px;margin-bottom:14px;">
       <button id="corrTypeClockBtn" class="corr-type-btn active" onclick="setCorrReqType('clock')">🕐 打刻忘れ・修正</button>
       <button id="corrTypeAppBtn" class="corr-type-btn" onclick="setCorrReqType('apptime')">📝 申請時間変更</button>
     </div>
     <div id="corrClockSection">
+      <!-- 現在の記録 -->
+      <div id="corrCurrentRecord" style="background:#F2F2F7;border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:13px;">
+        <div style="font-size:11px;color:var(--subtext);margin-bottom:6px;font-weight:600;">📋 現在の記録</div>
+        <div style="display:flex;gap:16px;">
+          <div>出勤：<strong id="corrCurrentIn" style="color:var(--primary);">--:--</strong></div>
+          <div>退勤：<strong id="corrCurrentOut" style="color:var(--blue);">--:--</strong></div>
+        </div>
+      </div>
       <label>修正後の出勤時刻</label>
       <select id="corrClockIn" style="width:100%;padding:10px;border-radius:10px;border:1.5px solid var(--border);font-size:14px;"></select>
       <label>修正後の退勤時刻（なければ空欄）</label>
@@ -2112,11 +2120,36 @@ function showCorrReqModal() {
   if (!currentUser) return;
   document.getElementById('corrReqDate').value = todayKey();
   setCorrReqType('clock');
-  buildTimeSel15('corrClockIn',  true, '');
-  buildTimeSel15('corrClockOut', true, '');
   document.getElementById('corrReqReason').value = '';
   document.getElementById('corrAppDetail').value = '';
+  loadCorrReqCurrentRecord(); // 今日の打刻を初期表示
   document.getElementById('modalCorrReq').classList.add('show');
+}
+
+function loadCorrReqCurrentRecord() {
+  const date = document.getElementById('corrReqDate').value;
+  const currentInEl  = document.getElementById('corrCurrentIn');
+  const currentOutEl = document.getElementById('corrCurrentOut');
+  if (!date || !currentUser) {
+    currentInEl.textContent  = '--:--';
+    currentOutEl.textContent = '--:--';
+    buildTimeSel15('corrClockIn',  true, '');
+    buildTimeSel15('corrClockOut', true, '');
+    return;
+  }
+  const rec   = getRecByKey(currentUser, date);
+  const pairs = rec.pairs || [];
+
+  // 現在記録されている最初の出勤・最後の退勤
+  const firstIn  = pairs.length > 0 && pairs[0].in  ? fmtTime(pairs[0].in)                    : null;
+  const lastOut  = pairs.length > 0 && pairs[pairs.length-1].out ? fmtTime(pairs[pairs.length-1].out) : null;
+
+  currentInEl.textContent  = firstIn  || '（記録なし）';
+  currentOutEl.textContent = lastOut  || '（記録なし）';
+
+  // 現在の時刻を初期値にセット（あれば）
+  buildTimeSel15('corrClockIn',  true, firstIn  || '');
+  buildTimeSel15('corrClockOut', true, lastOut  || '');
 }
 
 function submitCorrReq() {

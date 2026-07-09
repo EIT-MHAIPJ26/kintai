@@ -754,6 +754,11 @@
 <div class="modal-overlay" id="modalEdit" onclick="closeModalBg(event,'modalEdit')">
   <div class="modal">
     <h3>✏️ 打刻修正</h3>
+    <!-- 修正依頼から開いた時のヒントバナー -->
+    <div id="corrReqHint" style="display:none;background:#FFF8EC;border:1.5px solid #FF9500;border-radius:12px;padding:12px 14px;margin-bottom:14px;">
+      <div style="font-size:11px;font-weight:700;color:#FF9500;margin-bottom:6px;">🔧 修正依頼の内容</div>
+      <div id="corrReqHintText" style="font-size:13px;line-height:1.7;"></div>
+    </div>
     <label>メンバー</label>
     <select id="editMember" onchange="loadEditDate()"></select>
     <label>日付</label>
@@ -2337,6 +2342,9 @@ function submitMisc() {
 //  打刻修正モーダル（管理者のみ）
 // ============================================================
 function showEditModal() {
+  // ヒントバナーを隠す
+  const hint = document.getElementById('corrReqHint');
+  if (hint) hint.style.display = 'none';
   // メンバー一覧をセット
   const sel = document.getElementById('editMember');
   sel.innerHTML = '';
@@ -2349,6 +2357,46 @@ function showEditModal() {
   // 日付を今日に
   document.getElementById('editDate').value = todayKey();
   loadEditPairs();
+  document.getElementById('modalEdit').classList.add('show');
+}
+
+// 修正依頼から打刻修正モーダルを開く（申請者・日付・依頼時刻をセット）
+function showEditModalForCorrReq(name, dateKey, idx) {
+  const rec = getRecByKey(name, dateKey);
+  const req = (rec.corrReq || [])[idx];
+
+  // メンバー一覧をセットし申請者を選択
+  const sel = document.getElementById('editMember');
+  sel.innerHTML = '';
+  getUserNames().forEach(n => {
+    const opt = document.createElement('option');
+    opt.value = n; opt.textContent = n;
+    if (n === name) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  // 対象日をセット
+  document.getElementById('editDate').value = dateKey;
+  loadEditPairs();
+
+  // ヒントバナーを表示
+  const hint    = document.getElementById('corrReqHint');
+  const hintTxt = document.getElementById('corrReqHintText');
+  if (req) {
+    let msg = `申請者：<strong>${name}</strong>`;
+    if (req.type === 'clock') {
+      msg += `<br>依頼された時刻 → 出勤：<strong style="color:var(--primary);">${req.clockIn||'--'}</strong>`;
+      if (req.clockOut) msg += `　退勤：<strong style="color:var(--blue);">${req.clockOut}</strong>`;
+    } else {
+      const appTypeLabels = { ot:'残業申請', early:'早出申請', paid:'有給申請', holiday:'休日出勤申請', misc:'その他申請' };
+      msg += `<br>変更希望：<strong>${appTypeLabels[req.appType]||req.appType}</strong>　${req.appDetail||''}`;
+    }
+    if (req.reason) msg += `<br><span style="color:var(--subtext);font-size:12px;">理由：${req.reason}</span>`;
+    hintTxt.innerHTML = msg;
+    hint.style.display = '';
+  } else {
+    hint.style.display = 'none';
+  }
+
   document.getElementById('modalEdit').classList.add('show');
 }
 
@@ -2446,6 +2494,21 @@ function showEditAppModal() {
     sel.appendChild(opt);
   });
   document.getElementById('editAppDate').value = todayKey();
+  loadEditAppData();
+  document.getElementById('modalEditApp').classList.add('show');
+}
+
+// 修正依頼（申請時間変更）から申請修正モーダルを開く
+function showEditAppModalFor(name, dateKey) {
+  const sel = document.getElementById('editAppMember');
+  sel.innerHTML = '';
+  getUserNames().forEach(n => {
+    const opt = document.createElement('option');
+    opt.value = n; opt.textContent = n;
+    if (n === name) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  document.getElementById('editAppDate').value = dateKey;
   loadEditAppData();
   document.getElementById('modalEditApp').classList.add('show');
 }
@@ -3304,6 +3367,11 @@ function renderApprovalList() {
         detail = `${appTypeLabels[req.appType]||req.appType}：${req.appDetail}`;
       }
       const doneTxt = req.doneBy ? `<span style="font-size:11px;color:var(--subtext);">（${req.doneBy}が対応）</span>` : '';
+      // 修正を開くボタン（打刻修正 or 申請修正）
+      const openBtnHtml = req.type === 'clock'
+        ? `<button class="btn-approve" style="background:var(--purple);" onclick="showEditModalForCorrReq(${JSON.stringify(name)},${JSON.stringify(dateKey)},${idx})">🕐 打刻修正を開く</button>`
+        : `<button class="btn-approve" style="background:var(--purple);" onclick="showEditAppModalFor(${JSON.stringify(name)},${JSON.stringify(dateKey)})">📝 申請修正を開く</button>`;
+
       const item = document.createElement('div');
       item.className = 'corr-req-item' + (req.status === 'done' ? ' corr-req-done' : '');
       item.innerHTML = `
@@ -3311,12 +3379,16 @@ function renderApprovalList() {
           <span class="approval-name">👤 ${name}</span>
           <span class="approval-date">${dateStr} <span style="font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px;background:#FFF0DC;">${typeLabel}</span></span>
         </div>
-        <div class="approval-detail" style="margin:6px 0 4px;">🔧 ${detail} ${doneTxt}</div>
+        <div style="background:white;border-radius:8px;padding:8px 10px;margin:6px 0 4px;font-size:13px;border:1px solid #FFE0A8;">
+          <div style="font-size:11px;color:#FF9500;font-weight:700;margin-bottom:4px;">📋 依頼内容</div>
+          <div>${detail}</div>
+        </div>
         <div class="approval-reason">📝 ${req.reason||'（理由なし）'}</div>
+        ${doneTxt ? `<div style="margin-top:4px;font-size:12px;color:var(--subtext);">${doneTxt}</div>` : ''}
         ${req.status === 'pending' ? `
         <div class="approval-buttons">
-          <button class="btn-approve" style="background:#FF9500;" onclick="markCorrReqDone('${name}','${dateKey}',${idx})">✅ 対応済みにする</button>
-          <button class="btn-approve" style="background:var(--purple);" onclick="hideModal('modalAdminCorrMenu');showEditModal()">🕐 打刻修正を開く</button>
+          <button class="btn-approve" style="background:#FF9500;" onclick="markCorrReqDone(${JSON.stringify(name)},${JSON.stringify(dateKey)},${idx})">✅ 対応済みにする</button>
+          ${openBtnHtml}
         </div>` : ''}`;
       list.appendChild(item);
     });

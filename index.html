@@ -2940,11 +2940,15 @@ function renderMonthView() {
 
 function renderHistory() {
   const recs=getUserRecords();
-  const keys=Object.keys(recs).sort().reverse();
+  const monthKey=todayKey().substring(0,7); // YYYY-MM
+  const keys=Object.keys(recs).filter(k=>k.startsWith(monthKey)).sort().reverse();
   const list=document.getElementById('historyList');
   list.innerHTML='';
-  if(keys.length===0){list.innerHTML='<div class="empty-state">📭 まだ記録がありません</div>';return;}
-  keys.slice(0,30).forEach(key=>{
+  // 当月ラベル
+  const now=new Date(); const mLbl=now.getFullYear()+'年'+(now.getMonth()+1)+'月分';
+  list.innerHTML=`<div style="font-size:11px;color:var(--subtext);font-weight:600;margin-bottom:8px;padding-left:2px;">📅 ${mLbl}（${keys.length}件）</div>`;
+  if(keys.length===0){list.innerHTML+=`<div class="empty-state">📭 ${mLbl}の記録はまだありません</div>`;return;}
+  keys.forEach(key=>{
     const rec=migrateRec(recs[key]);
     const d=new Date(key.replace(/-/g,'/'));
     const isToday=key===todayKey();
@@ -3007,19 +3011,23 @@ function renderHistory() {
 // ============================================================
 function renderMyApplications() {
   if (!currentUser) return;
-  const recs  = getUserRecords();
+  const recs     = getUserRecords();
+  const monthKey = todayKey().substring(0, 7); // YYYY-MM
   const items = [];
 
   Object.entries(recs).forEach(([dateKey, r]) => {
     const rec = migrateRec(r);
     const d   = new Date(dateKey.replace(/-/g, '/'));
     const dateStr = (d.getMonth()+1)+'/'+d.getDate()+'（'+WEEKDAYS[d.getDay()]+'）';
+    const inMonth = dateKey.startsWith(monthKey);
 
     APP_TYPES.forEach(t => {
       const val = rec[t.key];
       const apps = Array.isArray(val) ? val : (val ? [val] : []);
       apps.forEach((app, idx) => {
         if (!app) return;
+        // 当月 or 承認待ちのみ表示
+        if (!inMonth && app.status !== 'pending') return;
         let detail = '';
         if (t.key==='ot')           detail = '残業予定 '+app.plannedEnd+'まで';
         else if (t.key==='early')   detail = '早出 '+app.startTime+'〜8:00';
@@ -3055,9 +3063,10 @@ function renderMyApplications() {
   badge.style.display = pendingCount > 0 ? '' : 'none';
 
   const list = document.getElementById('myAppsList');
-  list.innerHTML = '';
+  const now2=new Date(); const mLbl2=now2.getFullYear()+'年'+(now2.getMonth()+1)+'月分';
+  list.innerHTML=`<div style="font-size:11px;color:var(--subtext);font-weight:600;margin-bottom:8px;padding-left:2px;">📅 ${mLbl2}（承認待ちは全期間表示）</div>`;
   if (items.length === 0) {
-    list.innerHTML = '<div class="empty-state">📭 申請履歴がありません</div>';
+    list.innerHTML += '<div class="empty-state">📭 申請履歴がありません</div>';
     return;
   }
 
@@ -3223,23 +3232,27 @@ function renderApprovalTab() {
 function renderApprovalList() {
   if(!currentUser||!isAdmin(currentUser))return;
   const list=document.getElementById('approvalList');
-  list.innerHTML='';
+  const monthKey=todayKey().substring(0,7); // YYYY-MM
+  const now3=new Date(); const mLbl3=now3.getFullYear()+'年'+(now3.getMonth()+1)+'月分';
+  list.innerHTML=`<div style="font-size:11px;color:var(--subtext);font-weight:600;margin-bottom:8px;padding-left:2px;">📅 ${mLbl3}（承認待ちは全期間表示）</div>`;
   const items=[];
   getUserNames().forEach(name=>{
     Object.entries(getUserRecords(name)).forEach(([dateKey,r])=>{
       const rec=migrateRec(r);
+      const inMonth=dateKey.startsWith(monthKey);
       APP_TYPES.forEach(t=>{
         const val=rec[t.key];
         if(Array.isArray(val)){
           val.forEach((app,idx)=>{
-            if(app?.status) items.push({name,dateKey,rec,type:t.key,typeInfo:t,app,idx});
+            if(app?.status && (inMonth || app.status==='pending'))
+              items.push({name,dateKey,rec,type:t.key,typeInfo:t,app,idx});
           });
-        } else if(val?.status){
+        } else if(val?.status && (inMonth || val.status==='pending')){
           items.push({name,dateKey,rec,type:t.key,typeInfo:t,app:val,idx:null});
         }
       });
       // 残業延長申請
-      if(rec.ot?.extension?.status){
+      if(rec.ot?.extension?.status && (inMonth || rec.ot.extension.status==='pending')){
         items.push({name,dateKey,rec,type:'otExt',typeInfo:{key:'otExt',icon:'⏰',label:'残業延長申請',barClass:'pending',color:'var(--purple)'},app:rec.ot.extension,idx:null});
       }
     });
@@ -3330,7 +3343,10 @@ function renderApprovalList() {
     Object.entries(getUserRecords(name)).forEach(([dateKey, r]) => {
       const rec = migrateRec(r);
       if (!Array.isArray(rec.corrReq)) return;
+      const inMonthC = dateKey.startsWith(monthKey);
       rec.corrReq.forEach((req, idx) => {
+        // 当月 or 未対応のみ
+        if (!inMonthC && req.status !== 'pending') return;
         corrItems.push({ name, dateKey, req, idx });
       });
     });

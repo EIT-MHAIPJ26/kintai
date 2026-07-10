@@ -3384,9 +3384,10 @@ function renderApprovalList() {
       }
       const doneTxt = req.doneBy ? `<span style="font-size:11px;color:var(--subtext);">（${req.doneBy}が対応）</span>` : '';
       // 修正を開くボタン（打刻修正 or 申請修正）
+      // ※ onclick属性はシングルクォートで囲む（JSON.stringify の " と干渉しないように）
       const openBtnHtml = req.type === 'clock'
-        ? `<button class="btn-approve" style="background:var(--purple);" onclick="showEditModalForCorrReq(${JSON.stringify(name)},${JSON.stringify(dateKey)},${idx})">🕐 打刻修正を開く</button>`
-        : `<button class="btn-approve" style="background:var(--purple);" onclick="showEditAppModalFor(${JSON.stringify(name)},${JSON.stringify(dateKey)})">📝 申請修正を開く</button>`;
+        ? `<button class="btn-approve" style="background:var(--purple);" onclick='showEditModalForCorrReq(${JSON.stringify(name)},${JSON.stringify(dateKey)},${idx})'>🕐 打刻修正を開く</button>`
+        : `<button class="btn-approve" style="background:var(--purple);" onclick='showEditAppModalFor(${JSON.stringify(name)},${JSON.stringify(dateKey)})'>📝 申請修正を開く</button>`;
 
       const item = document.createElement('div');
       item.className = 'corr-req-item' + (req.status === 'done' ? ' corr-req-done' : '');
@@ -3403,7 +3404,7 @@ function renderApprovalList() {
         ${doneTxt ? `<div style="margin-top:4px;font-size:12px;color:var(--subtext);">${doneTxt}</div>` : ''}
         ${req.status === 'pending' ? `
         <div class="approval-buttons">
-          <button class="btn-approve" style="background:#FF9500;" onclick="markCorrReqDone(${JSON.stringify(name)},${JSON.stringify(dateKey)},${idx})">✅ 対応済みにする</button>
+          <button class="btn-approve" style="background:#FF9500;" onclick='markCorrReqDone(${JSON.stringify(name)},${JSON.stringify(dateKey)},${idx})'>✅ 対応済みにする</button>
           ${openBtnHtml}
         </div>` : ''}`;
       list.appendChild(item);

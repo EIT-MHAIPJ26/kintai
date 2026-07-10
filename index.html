@@ -236,6 +236,8 @@
     .btn-confirm.purple{background:var(--purple);}
     .btn-confirm.blue{background:var(--blue);}
     .btn-cancel{padding:13px 18px;background:var(--bg);color:var(--subtext);border:none;border-radius:12px;font-size:14px;cursor:pointer;}
+    /* ボタン内の子要素がクリックを横取りしないようにする */
+    button * { pointer-events: none; }
 
     /* メンバー管理モーダル */
     .modal-manage{background:white;border-radius:20px 20px 0 0;padding:22px 18px 36px;width:100%;max-width:480px;animation:slideUp .25s ease-out;max-height:88vh;display:flex;flex-direction:column;}

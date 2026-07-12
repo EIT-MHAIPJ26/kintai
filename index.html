@@ -813,7 +813,7 @@
       </div>
       <label>修正後の出勤時刻</label>
       <select id="corrClockIn" style="width:100%;padding:10px;border-radius:10px;border:1.5px solid var(--border);font-size:14px;"></select>
-      <label>修正後の退勤時刻（なければ空欄）</label>
+      <label>修正後の退勤時刻</label>
       <select id="corrClockOut" style="width:100%;padding:10px;border-radius:10px;border:1.5px solid var(--border);font-size:14px;"></select>
     </div>
     <div id="corrAppSection" style="display:none;">
@@ -1887,6 +1887,35 @@ function confirmReject() {
 //  共通：15分刻み時間セレクト生成（6:00〜22:00）
 // ============================================================
 // selId     : select要素のid
+// 「変更なし」付き時刻セレクト（修正依頼用）
+// setValue が null または '' のとき「変更なし」を選択状態にする
+function buildTimeSel15WithKeep(selId, setValue) {
+  const sel = document.getElementById(selId);
+  if (!sel) return;
+  sel.innerHTML = '';
+  // 変更なしオプション（value='keep'）
+  const keepOpt = document.createElement('option');
+  keepOpt.value = 'keep';
+  keepOpt.textContent = '変更なし（現在のまま）';
+  if (!setValue) keepOpt.selected = true;
+  sel.appendChild(keepOpt);
+  // 区切り線
+  const sep = document.createElement('option');
+  sep.disabled = true; sep.textContent = '──────────';
+  sel.appendChild(sep);
+  // 時刻の選択肢
+  for (let h = 6; h <= 22; h++) {
+    for (const m of [0, 15, 30, 45]) {
+      if (h === 22 && m > 0) continue;
+      const label = String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
+      const opt = document.createElement('option');
+      opt.value = label; opt.textContent = label;
+      if (label === setValue) opt.selected = true;
+      sel.appendChild(opt);
+    }
+  }
+}
+
 // withEmpty : 先頭に空白選択肢を入れるか（任意フィールド用）
 // setValue  : 初期選択値（"HH:MM" 形式）
 function buildTimeSel15(selId, withEmpty, setValue) {
@@ -2140,23 +2169,23 @@ function loadCorrReqCurrentRecord() {
   if (!date || !currentUser) {
     currentInEl.textContent  = '--:--';
     currentOutEl.textContent = '--:--';
-    buildTimeSel15('corrClockIn',  true, '');
-    buildTimeSel15('corrClockOut', true, '');
+    buildTimeSel15WithKeep('corrClockIn',  '');
+    buildTimeSel15WithKeep('corrClockOut', '');
     return;
   }
   const rec   = getRecByKey(currentUser, date);
   const pairs = rec.pairs || [];
 
   // 現在記録されている最初の出勤・最後の退勤
-  const firstIn  = pairs.length > 0 && pairs[0].in  ? fmtTime(pairs[0].in)                    : null;
+  const firstIn  = pairs.length > 0 && pairs[0].in  ? fmtTime(pairs[0].in)  : null;
   const lastOut  = pairs.length > 0 && pairs[pairs.length-1].out ? fmtTime(pairs[pairs.length-1].out) : null;
 
   currentInEl.textContent  = firstIn  || '（記録なし）';
   currentOutEl.textContent = lastOut  || '（記録なし）';
 
-  // 現在の時刻を初期値にセット（あれば）
-  buildTimeSel15('corrClockIn',  true, firstIn  || '');
-  buildTimeSel15('corrClockOut', true, lastOut  || '');
+  // 現在の時刻を初期値にセット（記録があればその時刻、なければ「変更なし」）
+  buildTimeSel15WithKeep('corrClockIn',  firstIn  || '');
+  buildTimeSel15WithKeep('corrClockOut', lastOut  || '');
 }
 
 function submitCorrReq() {
@@ -2166,11 +2195,15 @@ function submitCorrReq() {
   const reason   = document.getElementById('corrReqReason').value.trim();
   if (!reason) { showToast('依頼理由を入力してください'); return; }
 
-  let clockIn = '', clockOut = '', appType = '', appDetail = '';
+  let clockIn = null, clockOut = null, appType = '', appDetail = '';
   if (isClock) {
-    clockIn  = document.getElementById('corrClockIn').value;
-    clockOut = document.getElementById('corrClockOut').value;
-    if (!clockIn) { showToast('出勤時刻を選択してください'); return; }
+    const rawIn  = document.getElementById('corrClockIn').value;
+    const rawOut = document.getElementById('corrClockOut').value;
+    clockIn  = rawIn  === 'keep' ? null : (rawIn  || null);
+    clockOut = rawOut === 'keep' ? null : (rawOut || null);
+    if (clockIn === null && clockOut === null) {
+      showToast('出勤・退勤のどちらかを変更してください'); return;
+    }
   } else {
     appType   = document.getElementById('corrAppType').value;
     appDetail = document.getElementById('corrAppDetail').value.trim();
@@ -2386,8 +2419,9 @@ function showEditModalForCorrReq(name, dateKey, idx) {
   if (req) {
     let msg = `申請者：<strong>${name}</strong>`;
     if (req.type === 'clock') {
-      msg += `<br>依頼された時刻 → 出勤：<strong style="color:var(--primary);">${req.clockIn||'--'}</strong>`;
-      if (req.clockOut) msg += `　退勤：<strong style="color:var(--blue);">${req.clockOut}</strong>`;
+      const hintIn  = req.clockIn  ? `<strong style="color:var(--primary);">${req.clockIn}</strong>`  : `<span style="color:var(--subtext);">変更なし</span>`;
+      const hintOut = req.clockOut ? `<strong style="color:var(--blue);">${req.clockOut}</strong>` : `<span style="color:var(--subtext);">変更なし</span>`;
+      msg += `<br>依頼された時刻 → 出勤：${hintIn}　退勤：${hintOut}`;
     } else {
       const appTypeLabels = { ot:'残業申請', early:'早出申請', paid:'有給申請', holiday:'休日出勤申請', misc:'その他申請' };
       msg += `<br>変更希望：<strong>${appTypeLabels[req.appType]||req.appType}</strong>　${req.appDetail||''}`;
@@ -3380,7 +3414,9 @@ function renderApprovalList() {
       const typeLabel = req.type === 'clock' ? '打刻修正' : '申請時間変更';
       let detail = '';
       if (req.type === 'clock') {
-        detail = `出勤：<strong>${req.clockIn}</strong>${req.clockOut ? ' 退勤：<strong>'+req.clockOut+'</strong>' : ''}`;
+        const inTxt  = req.clockIn  ? `<strong style="color:var(--primary);">${req.clockIn}</strong>`  : `<span style="color:var(--subtext);font-size:12px;">変更なし</span>`;
+        const outTxt = req.clockOut ? `<strong style="color:var(--blue);">${req.clockOut}</strong>` : `<span style="color:var(--subtext);font-size:12px;">変更なし</span>`;
+        detail = `出勤：${inTxt}　退勤：${outTxt}`;
       } else {
         detail = `${appTypeLabels[req.appType]||req.appType}：${req.appDetail}`;
       }

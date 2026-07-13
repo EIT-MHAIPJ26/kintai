@@ -3424,10 +3424,12 @@ function renderApprovalTab() {
 function renderApprovalList() {
   if(!currentUser||!isAdmin(currentUser))return;
   const list=document.getElementById('approvalList');
-  const monthKey=todayKey().substring(0,7); // YYYY-MM
+  const monthKey=todayKey().substring(0,7);
   const now3=new Date(); const mLbl3=now3.getFullYear()+'年'+(now3.getMonth()+1)+'月分';
   list.innerHTML=`<div style="font-size:11px;color:var(--subtext);font-weight:600;margin-bottom:8px;padding-left:2px;">📅 ${mLbl3}（承認待ちは全期間表示）</div>`;
-  const items=[];
+
+  // ── 申請アイテム収集 ──────────────────────────────────────
+  const allItems=[];
   getUserNames().forEach(name=>{
     Object.entries(getUserRecords(name)).forEach(([dateKey,r])=>{
       const rec=migrateRec(r);
@@ -3437,173 +3439,132 @@ function renderApprovalList() {
         if(Array.isArray(val)){
           val.forEach((app,idx)=>{
             if(app?.status && (inMonth || app.status==='pending'))
-              items.push({name,dateKey,rec,type:t.key,typeInfo:t,app,idx});
+              allItems.push({kind:'app',name,dateKey,rec,type:t.key,typeInfo:t,app,idx});
           });
         } else if(val?.status && (inMonth || val.status==='pending')){
-          items.push({name,dateKey,rec,type:t.key,typeInfo:t,app:val,idx:null});
+          allItems.push({kind:'app',name,dateKey,rec,type:t.key,typeInfo:t,app:val,idx:null});
         }
       });
-      // 残業延長申請
       if(rec.ot?.extension?.status && (inMonth || rec.ot.extension.status==='pending')){
-        items.push({name,dateKey,rec,type:'otExt',typeInfo:{key:'otExt',icon:'⏰',label:'残業延長申請',barClass:'pending',color:'var(--purple)'},app:rec.ot.extension,idx:null});
+        allItems.push({kind:'app',name,dateKey,rec,type:'otExt',typeInfo:{key:'otExt',icon:'⏰',label:'残業延長申請',barClass:'pending',color:'var(--purple)'},app:rec.ot.extension,idx:null});
+      }
+      // 修正依頼
+      if(Array.isArray(rec.corrReq)){
+        rec.corrReq.forEach((req,idx)=>{
+          if(!dateKey.startsWith(monthKey) && req.status!=='pending') return;
+          allItems.push({kind:'corr',name,dateKey,rec,req,idx});
+        });
       }
     });
   });
-  // 承認待ち→承認済み→却下の順、同ステータス内は申請日時の新しい順
-  items.sort((a,b)=>{
-    const ord={pending:0,approved:1,rejected:2};
-    const statusDiff=(ord[a.app.status]??3)-(ord[b.app.status]??3);
-    if(statusDiff!==0) return statusDiff;
-    return (b.app.appliedAt||0)-(a.app.appliedAt||0);
+
+  // 日付の新しい順（同日は申請日時の新しい順）
+  allItems.sort((a,b)=>{
+    const dk = b.dateKey.localeCompare(a.dateKey);
+    if(dk!==0) return dk;
+    const ta = a.kind==='app' ? (a.app.appliedAt||0) : (a.req.appliedAt||0);
+    const tb = b.kind==='app' ? (b.app.appliedAt||0) : (b.req.appliedAt||0);
+    return tb-ta;
   });
-  if(items.length===0){list.innerHTML='<div class="empty-state">📭 申請はありません</div>';return;}
 
-  const secLabels={pending:'⏳ 承認待ち',approved:'✅ 承認済み（取り消し可）',rejected:'🚫 却下済み（削除可）'};
-  let lastStatus='';
-  items.forEach(({name,dateKey,rec,type,typeInfo,app,idx})=>{
-    if(app.status!==lastStatus){
-      const secDiv=document.createElement('div');
-      secDiv.style.cssText='font-size:12px;font-weight:700;color:var(--subtext);margin:12px 0 6px;padding-left:4px;border-top:1px solid var(--border);padding-top:10px;';
-      secDiv.textContent=secLabels[app.status]||app.status;
-      list.appendChild(secDiv);
-      lastStatus=app.status;
-    }
+  if(allItems.length===0){list.innerHTML='<div class="empty-state">📭 申請はありません</div>';return;}
 
+  const appTypeLabels={ot:'残業申請',early:'早出申請',paid:'有給申請',holiday:'休日出勤申請',misc:'その他申請'};
+  const statusBadge={
+    pending:'<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;background:#FFF3CD;color:#FF9500;">⏳ 承認待ち</span>',
+    approved:'<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;background:#E8F9EF;color:#05A847;">✅ 承認済み</span>',
+    rejected:'<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;background:#FFE8E6;color:var(--danger);">🚫 却下</span>',
+    done:    '<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;background:#E8F9EF;color:#05A847;">✅ 対応済み</span>',
+    corr_pending:'<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;background:#FFF3CD;color:#FF9500;">⏳ 未対応</span>',
+  };
+
+  allItems.forEach(entry=>{
+    const {kind,name,dateKey}=entry;
     const d=new Date(dateKey.replace(/-/g,'/'));
     const dateStr=(d.getMonth()+1)+'/'+d.getDate()+'（'+WEEKDAYS[d.getDay()]+'）';
 
-    let detailHtml='';
-    if(type==='ot')           detailHtml=`${typeInfo.icon} 残業予定 <strong>${app.plannedEnd}</strong>まで`;
-    else if(type==='otExt')   detailHtml=`${typeInfo.icon} <strong>${rec.ot?.plannedEnd}→${app.plannedEnd}</strong>まで延長`;
-    else if(type==='early')   detailHtml=`${typeInfo.icon} 早出 <strong>${app.startTime}〜8:00</strong>`;
-    else if(type==='paid')    detailHtml=`${typeInfo.icon} 有給 <strong>${app.startTime}〜${app.endTime}</strong>`;
-    else if(type==='holiday') detailHtml=`${typeInfo.icon} 休日出勤 <strong>${app.workDate}</strong> ${app.startTime||''}〜${app.endTime||''} ${app.wantComp?` 振替希望：${app.compDate}${app.compTime?' '+app.compTime:''}`:'（振替なし）'}`;
-    else if(type==='misc') {
-      if (app.subType === '振替') {
-        const wTime = app.workStart ? ` ${app.workStart}${app.workEnd?'〜'+app.workEnd:''}` : '';
-        const tTime = app.takeStart ? ` ${app.takeStart}${app.takeEnd?'〜'+app.takeEnd:''}` : '';
-        detailHtml = `${typeInfo.icon} 振替　出勤日：<strong>${app.workDate}${wTime}</strong>　振替休日：<strong>${app.takeDate}${tTime}</strong>`;
+    if(kind==='app'){
+      const {rec,type,typeInfo,app,idx}=entry;
+      let detailHtml='';
+      if(type==='ot')           detailHtml=`${typeInfo.icon} 残業予定 <strong>${app.plannedEnd}</strong>まで`;
+      else if(type==='otExt')   detailHtml=`${typeInfo.icon} <strong>${rec.ot?.plannedEnd}→${app.plannedEnd}</strong>まで延長`;
+      else if(type==='early')   detailHtml=`${typeInfo.icon} 早出 <strong>${app.startTime}〜8:00</strong>`;
+      else if(type==='paid')    detailHtml=`${typeInfo.icon} 有給 <strong>${app.startTime}〜${app.endTime}</strong>`;
+      else if(type==='holiday') detailHtml=`${typeInfo.icon} 休日出勤 <strong>${app.workDate}</strong> ${app.startTime||''}〜${app.endTime||''} ${app.wantComp?`振替希望：${app.compDate}${app.compTime?' '+app.compTime:''}`:'（振替なし）'}`;
+      else if(type==='misc'){
+        if(app.subType==='振替'){
+          const wTime=app.workStart?` ${app.workStart}${app.workEnd?'〜'+app.workEnd:''}`:'' ;
+          const tTime=app.takeStart?` ${app.takeStart}${app.takeEnd?'〜'+app.takeEnd:''}`:'' ;
+          detailHtml=`${typeInfo.icon} 振替　出勤日：<strong>${app.workDate}${wTime}</strong>　振替休日：<strong>${app.takeDate}${tTime}</strong>`;
+        } else {
+          detailHtml=`${typeInfo.icon} ${app.subType}${app.endDate?' <strong>'+app.date+'〜'+app.endDate+'</strong>':app.startTime?' <strong>'+app.startTime+(app.endTime?'〜'+app.endTime:'')+'</strong>':''}`;
+        }
+      }
+      const isSelf=name===currentUser;
+      const idxArg=idx!==null?`,${idx}`:'';
+      const deleteBtn=`<button style="padding:6px 14px;border-radius:8px;border:1px solid var(--danger);font-size:12px;font-weight:700;cursor:pointer;background:transparent;color:var(--danger);margin-left:6px;" onclick="revokeApplication('${name}','${dateKey}','${type}'${idxArg})">🗑️ 削除</button>`;
+      let actionHtml='';
+      if(app.status==='approved'){
+        actionHtml=`<div class="approval-buttons"><button style="padding:8px 18px;border-radius:10px;border:none;font-weight:700;font-size:13px;cursor:pointer;background:#F2F2F7;color:var(--danger);" onclick="revokeApplication('${name}','${dateKey}','${type}'${idxArg})">🗑️ 承認取り消し・削除</button></div>`;
+      } else if(app.status==='rejected'){
+        actionHtml=`<div class="approval-buttons">${deleteBtn}</div>`;
+      } else if(isSelf){
+        actionHtml=`<div class="approval-done" style="background:#F2F2F7;color:var(--subtext);">⏳ 他の管理者の承認待ちです</div>`;
+      } else if(type==='otExt'){
+        actionHtml=`<div class="approval-buttons"><button class="btn-approve" onclick="approveOtExt('${name}','${dateKey}')">✅ 承認</button><button class="btn-reject" onclick="showRejectModal('${name}','${dateKey}','otExt')">🚫 却下</button>${deleteBtn}</div>`;
       } else {
-        detailHtml = `${typeInfo.icon} ${app.subType}${app.endDate?' <strong>'+app.date+'〜'+app.endDate+'</strong>':app.startTime?' <strong>'+app.startTime+(app.endTime?'〜'+app.endTime:'')+'</strong>':''}`;
+        actionHtml=`<div class="approval-buttons"><button class="btn-approve" onclick="approveApplication('${name}','${dateKey}','${type}'${idxArg})">✅ 承認</button><button class="btn-reject" onclick="showRejectModal('${name}','${dateKey}','${type}'${idxArg})">🚫 却下</button>${deleteBtn}</div>`;
       }
-    }
-
-    const isSelf = name === currentUser;
-    const idxArg = idx !== null ? `,${idx}` : '';
-    const deleteBtn = `<button style="padding:6px 14px;border-radius:8px;border:1px solid var(--danger);font-size:12px;font-weight:700;cursor:pointer;background:transparent;color:var(--danger);margin-left:6px;" onclick="revokeApplication('${name}','${dateKey}','${type}'${idxArg})">🗑️ 削除</button>`;
-
-    let actionHtml='';
-    if(app.status==='approved'){
-      actionHtml=`<div class="approval-buttons">
-        <button style="padding:8px 18px;border-radius:10px;border:none;font-weight:700;font-size:13px;cursor:pointer;background:#F2F2F7;color:var(--danger);" onclick="revokeApplication('${name}','${dateKey}','${type}'${idxArg})">🗑️ 承認取り消し・削除</button>
-      </div>`;
-    } else if(app.status==='rejected'){
-      actionHtml=`<div class="approval-buttons">${deleteBtn}</div>`;
-    } else if(isSelf){
-      actionHtml=`<div class="approval-done" style="background:#F2F2F7;color:var(--subtext);">⏳ 他の管理者の承認待ちです</div>`;
-    } else if(type==='otExt'){
-      actionHtml=`<div class="approval-buttons">
-        <button class="btn-approve" onclick="approveOtExt('${name}','${dateKey}')">✅ 承認</button>
-        <button class="btn-reject"  onclick="showRejectModal('${name}','${dateKey}','otExt')">🚫 却下</button>
-        ${deleteBtn}
-      </div>`;
-    } else {
-      actionHtml=`<div class="approval-buttons">
-        <button class="btn-approve" onclick="approveApplication('${name}','${dateKey}','${type}'${idxArg})">✅ 承認</button>
-        <button class="btn-reject"  onclick="showRejectModal('${name}','${dateKey}','${type}'${idxArg})">🚫 却下</button>
-        ${deleteBtn}
-      </div>`;
-    }
-
-    const approverTxt = app.approvedBy ? `<span style="font-size:11px;color:var(--subtext);">（${app.approvedBy}）</span>` : '';
-    const item=document.createElement('div');
-    item.className='approval-item';
-    item.innerHTML=`
-      <div class="approval-header">
-        <span class="approval-name">👤 ${name}</span>
-        <span class="approval-date">${dateStr} <span style="font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px;background:#F2F2F7;">${typeInfo.label}</span></span>
-      </div>
-      <div class="approval-detail">${detailHtml} ${approverTxt}</div>
-      <div class="approval-reason">📝 ${app.reason||'（理由なし）'}</div>
-      ${actionHtml}`;
-    list.appendChild(item);
-  });
-
-  // ── 修正依頼セクション ──────────────────────────────────────
-  const corrItems = [];
-  getUserNames().forEach(name => {
-    Object.entries(getUserRecords(name)).forEach(([dateKey, r]) => {
-      const rec = migrateRec(r);
-      if (!Array.isArray(rec.corrReq)) return;
-      const inMonthC = dateKey.startsWith(monthKey);
-      rec.corrReq.forEach((req, idx) => {
-        // 当月 or 未対応のみ
-        if (!inMonthC && req.status !== 'pending') return;
-        corrItems.push({ name, dateKey, req, idx });
-      });
-    });
-  });
-  // 未対応→対応済みの順、同じステータス内は日付新しい順
-  corrItems.sort((a, b) => {
-    const o = { pending: 0, done: 1 };
-    return (o[a.req.status]??2) - (o[b.req.status]??2) || b.dateKey.localeCompare(a.dateKey);
-  });
-  if (corrItems.length > 0) {
-    const secDiv = document.createElement('div');
-    secDiv.id = 'corrReqSection';
-    secDiv.style.cssText = 'font-size:12px;font-weight:700;color:var(--subtext);margin:16px 0 8px;padding-left:4px;border-top:1px solid var(--border);padding-top:10px;';
-    secDiv.textContent = '🔧 打刻・申請修正依頼';
-    list.appendChild(secDiv);
-
-    const appTypeLabels = { ot:'残業申請', early:'早出申請', paid:'有給申請', holiday:'休日出勤申請', misc:'その他申請' };
-    let lastCorrStatus = '';
-    corrItems.forEach(({ name, dateKey, req, idx }) => {
-      if (req.status !== lastCorrStatus) {
-        const sub = document.createElement('div');
-        sub.style.cssText = 'font-size:11px;color:var(--subtext);margin:8px 0 4px;';
-        sub.textContent = req.status === 'pending' ? '⏳ 未対応' : '✅ 対応済み';
-        list.appendChild(sub);
-        lastCorrStatus = req.status;
-      }
-      const d = new Date(dateKey.replace(/-/g, '/'));
-      const dateStr = (d.getMonth()+1)+'/'+d.getDate()+'（'+WEEKDAYS[d.getDay()]+'）';
-      const typeLabel = req.type === 'clock' ? '打刻修正' : '申請時間変更';
-      let detail = '';
-      if (req.type === 'clock') {
-        const inTxt  = req.clockIn  ? `<strong style="color:var(--primary);">${req.clockIn}</strong>`  : `<span style="color:var(--subtext);font-size:12px;">変更なし</span>`;
-        const outTxt = req.clockOut ? `<strong style="color:var(--blue);">${req.clockOut}</strong>` : `<span style="color:var(--subtext);font-size:12px;">変更なし</span>`;
-        detail = `出勤：${inTxt}　退勤：${outTxt}`;
-      } else {
-        detail = `${appTypeLabels[req.appType]||req.appType}：${req.appDetail}`;
-      }
-      const doneTxt = req.doneBy ? `<span style="font-size:11px;color:var(--subtext);">（${req.doneBy}が対応）</span>` : '';
-      // 修正を開くボタン（打刻修正 or 申請修正）
-      // ※ onclick属性はシングルクォートで囲む（JSON.stringify の " と干渉しないように）
-      const openBtnHtml = req.type === 'clock'
-        ? `<button class="btn-approve" style="background:var(--purple);" onclick='showEditModalForCorrReq(${JSON.stringify(name)},${JSON.stringify(dateKey)},${idx})'>🕐 打刻修正を開く</button>`
-        : `<button class="btn-approve" style="background:var(--purple);" onclick='showEditAppModalFor(${JSON.stringify(name)},${JSON.stringify(dateKey)})'>📝 申請修正を開く</button>`;
-
-      const item = document.createElement('div');
-      item.className = 'corr-req-item' + (req.status === 'done' ? ' corr-req-done' : '');
-      item.innerHTML = `
+      const approverTxt=app.approvedBy?`<span style="font-size:11px;color:var(--subtext);">（${app.approvedBy}）</span>`:'';
+      const item=document.createElement('div');
+      item.className='approval-item';
+      item.innerHTML=`
         <div class="approval-header">
           <span class="approval-name">👤 ${name}</span>
-          <span class="approval-date">${dateStr} <span style="font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px;background:#FFF0DC;">${typeLabel}</span></span>
+          <span class="approval-date">${dateStr} <span style="font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px;background:#F2F2F7;">${typeInfo.label}</span> ${statusBadge[app.status]||''}</span>
+        </div>
+        <div class="approval-detail">${detailHtml} ${approverTxt}</div>
+        <div class="approval-reason">📝 ${app.reason||'（理由なし）'}</div>
+        ${actionHtml}`;
+      list.appendChild(item);
+
+    } else {
+      // 修正依頼
+      const {req,idx}=entry;
+      const typeLabel=req.type==='clock'?'打刻修正':'申請時間変更';
+      let detail='';
+      if(req.type==='clock'){
+        const inTxt =req.clockIn ?`<strong style="color:var(--primary);">${req.clockIn}</strong>` :`<span style="color:var(--subtext);font-size:12px;">変更なし</span>`;
+        const outTxt=req.clockOut?`<strong style="color:var(--blue);">${req.clockOut}</strong>`:`<span style="color:var(--subtext);font-size:12px;">変更なし</span>`;
+        detail=`出勤：${inTxt}　退勤：${outTxt}`;
+      } else {
+        detail=`${appTypeLabels[req.appType]||req.appType}：${req.appDetail}`;
+      }
+      const doneTxt=req.doneBy?`<span style="font-size:11px;color:var(--subtext);">（${req.doneBy}が対応）</span>`:'';
+      const openBtnHtml=req.type==='clock'
+        ?`<button class="btn-approve" style="background:var(--purple);" onclick='showEditModalForCorrReq(${JSON.stringify(name)},${JSON.stringify(dateKey)},${idx})'>🕐 打刻修正を開く</button>`
+        :`<button class="btn-approve" style="background:var(--purple);" onclick='showEditAppModalFor(${JSON.stringify(name)},${JSON.stringify(dateKey)})'>📝 申請修正を開く</button>`;
+      const item=document.createElement('div');
+      item.className='corr-req-item'+(req.status==='done'?' corr-req-done':'');
+      item.innerHTML=`
+        <div class="approval-header">
+          <span class="approval-name">👤 ${name}</span>
+          <span class="approval-date">${dateStr} <span style="font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px;background:#FFF0DC;">${typeLabel}</span> ${req.status==='pending'?statusBadge.corr_pending:statusBadge.done}</span>
         </div>
         <div style="background:white;border-radius:8px;padding:8px 10px;margin:6px 0 4px;font-size:13px;border:1px solid #FFE0A8;">
           <div style="font-size:11px;color:#FF9500;font-weight:700;margin-bottom:4px;">📋 依頼内容</div>
           <div>${detail}</div>
         </div>
         <div class="approval-reason">📝 ${req.reason||'（理由なし）'}</div>
-        ${doneTxt ? `<div style="margin-top:4px;font-size:12px;color:var(--subtext);">${doneTxt}</div>` : ''}
-        ${req.status === 'pending' ? `
+        ${doneTxt?`<div style="margin-top:4px;font-size:12px;color:var(--subtext);">${doneTxt}</div>`:''}
+        ${req.status==='pending'?`
         <div class="approval-buttons">
           <button class="btn-approve" style="background:#FF9500;" onclick='markCorrReqDone(${JSON.stringify(name)},${JSON.stringify(dateKey)},${idx})'>✅ 対応済みにする</button>
           ${openBtnHtml}
-        </div>` : ''}`;
+        </div>`:''}`;
       list.appendChild(item);
-    });
-  }
+    }
+  });
 }
 
 // 管理者による承認取り消し

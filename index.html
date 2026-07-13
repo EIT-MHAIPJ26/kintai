@@ -818,15 +818,20 @@
     </div>
     <div id="corrAppSection" style="display:none;">
       <label>変更したい申請</label>
-      <select id="corrAppType" style="width:100%;padding:10px;border-radius:10px;border:1.5px solid var(--border);font-size:14px;">
+      <select id="corrAppType" style="width:100%;padding:10px;border-radius:10px;border:1.5px solid var(--border);font-size:14px;" onchange="loadCorrAppCurrentRecord()">
         <option value="ot">🕐 残業申請</option>
         <option value="early">🌅 早出申請</option>
         <option value="paid">📅 有給申請</option>
         <option value="holiday">🏢 休日出勤申請</option>
         <option value="misc">📋 その他申請</option>
       </select>
-      <label>変更したい内容</label>
-      <textarea id="corrAppDetail" placeholder="例：残業終了を20:00→21:00に変更したい" style="height:68px;"></textarea>
+      <!-- 現在の申請内容 -->
+      <div id="corrAppCurrentRecord" style="background:#F2F2F7;border-radius:10px;padding:10px 14px;margin:10px 0 4px;font-size:13px;">
+        <div style="font-size:11px;color:var(--subtext);margin-bottom:5px;font-weight:600;">📋 現在の申請内容</div>
+        <div id="corrAppCurrentText" style="color:var(--subtext);">日付を選択してください</div>
+      </div>
+      <!-- 申請種別ごとの時刻入力（動的生成） -->
+      <div id="corrAppTimeFields"></div>
     </div>
     <label>依頼理由</label>
     <textarea id="corrReqReason" placeholder="打刻忘れ・変更の理由を入力してください" style="height:68px;"></textarea>
@@ -2157,8 +2162,7 @@ function showCorrReqModal() {
   document.getElementById('corrReqDate').value = todayKey();
   setCorrReqType('clock');
   document.getElementById('corrReqReason').value = '';
-  document.getElementById('corrAppDetail').value = '';
-  loadCorrReqCurrentRecord(); // 今日の打刻を初期表示
+  loadCorrReqCurrentRecord(); // 今日の打刻・申請を初期表示
   document.getElementById('modalCorrReq').classList.add('show');
 }
 
@@ -2186,6 +2190,99 @@ function loadCorrReqCurrentRecord() {
   // 現在の時刻を初期値にセット（記録があればその時刻、なければ「変更なし」）
   buildTimeSel15WithKeep('corrClockIn',  firstIn  || '');
   buildTimeSel15WithKeep('corrClockOut', lastOut  || '');
+  // 申請時間変更セクションも更新
+  loadCorrAppCurrentRecord();
+}
+
+// 申請時間変更セクション：選択中の日付・申請種別の現在記録と入力欄を構築
+function loadCorrAppCurrentRecord() {
+  const date    = document.getElementById('corrReqDate').value;
+  const appType = document.getElementById('corrAppType').value;
+  const currentEl = document.getElementById('corrAppCurrentText');
+  const fieldsEl  = document.getElementById('corrAppTimeFields');
+  if (!currentEl || !fieldsEl) return;
+
+  const SEL_STYLE = 'width:100%;padding:10px;border-radius:10px;border:1.5px solid var(--border);font-size:14px;margin-top:4px;';
+  const LBL_STYLE = 'font-size:13px;font-weight:600;color:var(--text);margin-top:10px;display:block;';
+
+  function makeLabel(txt) {
+    const l = document.createElement('label');
+    l.style.cssText = LBL_STYLE; l.textContent = txt;
+    return l;
+  }
+  function makeSel(id) {
+    const s = document.createElement('select');
+    s.id = id; s.style.cssText = SEL_STYLE;
+    return s;
+  }
+
+  fieldsEl.innerHTML = '';
+
+  if (!date || !currentUser) {
+    currentEl.textContent = '日付を選択してください';
+    return;
+  }
+
+  const rec = getRecByKey(currentUser, date);
+
+  if (appType === 'ot') {
+    const ot = rec.ot;
+    currentEl.innerHTML = ot
+      ? `残業終了予定：<strong>${ot.plannedEnd}</strong>（${ot.status === 'approved' ? '承認済み' : '申請中'}）`
+      : '（残業申請なし）';
+    fieldsEl.appendChild(makeLabel('新しい残業終了時刻'));
+    fieldsEl.appendChild(makeSel('corrAppOtEnd'));
+    buildTimeSel15WithKeep('corrAppOtEnd', ot?.plannedEnd || '');
+
+  } else if (appType === 'early') {
+    const early = rec.early;
+    currentEl.innerHTML = early
+      ? `早出：<strong>${early.startTime}〜8:00</strong>（${early.status === 'approved' ? '承認済み' : '申請中'}）`
+      : '（早出申請なし）';
+    fieldsEl.appendChild(makeLabel('新しい早出開始時刻'));
+    fieldsEl.appendChild(makeSel('corrAppEarlyStart'));
+    buildTimeSel15WithKeep('corrAppEarlyStart', early?.startTime || '');
+
+  } else if (appType === 'paid') {
+    const paid = rec.paid;
+    currentEl.innerHTML = paid
+      ? `有給：<strong>${paid.startTime}〜${paid.endTime}</strong>（${paid.status === 'approved' ? '承認済み' : '申請中'}）`
+      : '（有給申請なし）';
+    fieldsEl.appendChild(makeLabel('新しい開始時刻'));
+    fieldsEl.appendChild(makeSel('corrAppPaidStart'));
+    fieldsEl.appendChild(makeLabel('新しい終了時刻'));
+    fieldsEl.appendChild(makeSel('corrAppPaidEnd'));
+    buildTimeSel15WithKeep('corrAppPaidStart', paid?.startTime || '');
+    buildTimeSel15WithKeep('corrAppPaidEnd',   paid?.endTime   || '');
+
+  } else if (appType === 'holiday') {
+    const holiday = Array.isArray(rec.holiday)
+      ? rec.holiday[rec.holiday.length - 1]
+      : rec.holiday;
+    currentEl.innerHTML = holiday
+      ? `休日出勤：<strong>${holiday.workDate} ${holiday.startTime||''}〜${holiday.endTime||''}</strong>（${holiday.status === 'approved' ? '承認済み' : '申請中'}）`
+      : '（休日出勤申請なし）';
+    fieldsEl.appendChild(makeLabel('新しい開始時刻'));
+    fieldsEl.appendChild(makeSel('corrAppHolStart'));
+    fieldsEl.appendChild(makeLabel('新しい終了時刻'));
+    fieldsEl.appendChild(makeSel('corrAppHolEnd'));
+    buildTimeSel15WithKeep('corrAppHolStart', holiday?.startTime || '');
+    buildTimeSel15WithKeep('corrAppHolEnd',   holiday?.endTime   || '');
+
+  } else if (appType === 'misc') {
+    const miscArr = Array.isArray(rec.misc) ? rec.misc : (rec.misc ? [rec.misc] : []);
+    currentEl.innerHTML = miscArr.length > 0
+      ? miscArr.map(m => `<strong>${m.subType}</strong>${m.startTime ? ' '+m.startTime : ''}`).join('、')
+      : '（その他申請なし）';
+    // その他申請は多様なためテキストで変更内容を記入
+    const lbl = makeLabel('変更したい内容');
+    const ta  = document.createElement('textarea');
+    ta.id = 'corrAppMiscDetail';
+    ta.placeholder = '例：特別休暇の終了時刻を17:00→18:00に変更したい';
+    ta.style.cssText = 'width:100%;padding:10px;border-radius:10px;border:1.5px solid var(--border);font-size:13px;margin-top:4px;height:68px;resize:none;';
+    fieldsEl.appendChild(lbl);
+    fieldsEl.appendChild(ta);
+  }
 }
 
 function submitCorrReq() {
@@ -2205,9 +2302,36 @@ function submitCorrReq() {
       showToast('出勤・退勤のどちらかを変更してください'); return;
     }
   } else {
-    appType   = document.getElementById('corrAppType').value;
-    appDetail = document.getElementById('corrAppDetail').value.trim();
-    if (!appDetail) { showToast('変更内容を入力してください'); return; }
+    appType = document.getElementById('corrAppType').value;
+    // 申請種別ごとに動的フィールドから値を収集
+    const v = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+    const keep = val => (!val || val === 'keep');
+    if (appType === 'ot') {
+      const end = v('corrAppOtEnd');
+      if (keep(end)) { showToast('新しい残業終了時刻を選択してください'); return; }
+      appDetail = `残業終了 → ${end}`;
+    } else if (appType === 'early') {
+      const st = v('corrAppEarlyStart');
+      if (keep(st)) { showToast('新しい早出開始時刻を選択してください'); return; }
+      appDetail = `早出開始 → ${st}`;
+    } else if (appType === 'paid') {
+      const st = v('corrAppPaidStart'), en = v('corrAppPaidEnd');
+      const parts = [];
+      if (!keep(st)) parts.push(`開始 → ${st}`);
+      if (!keep(en)) parts.push(`終了 → ${en}`);
+      if (parts.length === 0) { showToast('変更する時刻を選択してください'); return; }
+      appDetail = parts.join('　');
+    } else if (appType === 'holiday') {
+      const st = v('corrAppHolStart'), en = v('corrAppHolEnd');
+      const parts = [];
+      if (!keep(st)) parts.push(`開始 → ${st}`);
+      if (!keep(en)) parts.push(`終了 → ${en}`);
+      if (parts.length === 0) { showToast('変更する時刻を選択してください'); return; }
+      appDetail = parts.join('　');
+    } else {
+      appDetail = (document.getElementById('corrAppMiscDetail')?.value || '').trim();
+      if (!appDetail) { showToast('変更内容を入力してください'); return; }
+    }
   }
 
   const req = {

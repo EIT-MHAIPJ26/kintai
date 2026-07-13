@@ -795,15 +795,15 @@
 <div class="modal-overlay" id="modalCorrReq" onclick="closeModalBg(event,'modalCorrReq')">
   <div class="modal">
     <h3>🔧 修正依頼</h3>
-    <label>対象の日付</label>
-    <input type="date" id="corrReqDate" onchange="loadCorrReqCurrentRecord()"/>
     <label>依頼の種類</label>
     <div style="display:flex;gap:8px;margin-bottom:14px;">
       <button id="corrTypeClockBtn" class="corr-type-btn active" onclick="setCorrReqType('clock')">🕐 打刻忘れ・修正</button>
       <button id="corrTypeAppBtn" class="corr-type-btn" onclick="setCorrReqType('apptime')">📝 申請時間変更</button>
     </div>
+    <!-- 打刻修正：日付入力あり -->
     <div id="corrClockSection">
-      <!-- 現在の記録 -->
+      <label>対象の日付</label>
+      <input type="date" id="corrReqDate" onchange="loadCorrReqCurrentRecord()"/>
       <div id="corrCurrentRecord" style="background:#F2F2F7;border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:13px;">
         <div style="font-size:11px;color:var(--subtext);margin-bottom:6px;font-weight:600;">📋 現在の記録</div>
         <div style="display:flex;gap:16px;">
@@ -816,8 +816,9 @@
       <label>修正後の退勤時刻</label>
       <select id="corrClockOut" style="width:100%;padding:10px;border-radius:10px;border:1.5px solid var(--border);font-size:14px;"></select>
     </div>
+    <!-- 申請時間変更：種別→当月一覧→選択→時刻入力 -->
     <div id="corrAppSection" style="display:none;">
-      <label>変更したい申請</label>
+      <label>変更したい申請の種別</label>
       <select id="corrAppType" style="width:100%;padding:10px;border-radius:10px;border:1.5px solid var(--border);font-size:14px;" onchange="loadCorrAppCurrentRecord()">
         <option value="ot">🕐 残業申請</option>
         <option value="early">🌅 早出申請</option>
@@ -825,13 +826,9 @@
         <option value="holiday">🏢 休日出勤申請</option>
         <option value="misc">📋 その他申請</option>
       </select>
-      <!-- 現在の申請内容 -->
-      <div id="corrAppCurrentRecord" style="background:#F2F2F7;border-radius:10px;padding:10px 14px;margin:10px 0 4px;font-size:13px;">
-        <div style="font-size:11px;color:var(--subtext);margin-bottom:5px;font-weight:600;">📋 現在の申請内容</div>
-        <div id="corrAppCurrentText" style="color:var(--subtext);">日付を選択してください</div>
-      </div>
-      <!-- 申請種別ごとの時刻入力（動的生成） -->
-      <div id="corrAppTimeFields"></div>
+      <label style="margin-top:10px;">当月の申請一覧（タップして選択）</label>
+      <div id="corrAppMonthList" style="margin-top:4px;border:1.5px solid var(--border);border-radius:10px;overflow:hidden;max-height:190px;overflow-y:auto;"></div>
+      <div id="corrAppTimeFields" style="margin-top:2px;"></div>
     </div>
     <label>依頼理由</label>
     <textarea id="corrReqReason" placeholder="打刻忘れ・変更の理由を入力してください" style="height:68px;"></textarea>
@@ -2194,101 +2191,136 @@ function loadCorrReqCurrentRecord() {
   loadCorrAppCurrentRecord();
 }
 
-// 申請時間変更セクション：選択中の日付・申請種別の現在記録と入力欄を構築
+// 当月の申請一覧を表示して選択できるようにする
+let _corrAppEntries  = [];
+let _corrAppSelected = null;
+
 function loadCorrAppCurrentRecord() {
-  const date    = document.getElementById('corrReqDate').value;
-  const appType = document.getElementById('corrAppType').value;
-  const currentEl = document.getElementById('corrAppCurrentText');
-  const fieldsEl  = document.getElementById('corrAppTimeFields');
-  if (!currentEl || !fieldsEl) return;
-
-  const SEL_STYLE = 'width:100%;padding:10px;border-radius:10px;border:1.5px solid var(--border);font-size:14px;margin-top:4px;';
-  const LBL_STYLE = 'font-size:13px;font-weight:600;color:var(--text);margin-top:10px;display:block;';
-
-  function makeLabel(txt) {
-    const l = document.createElement('label');
-    l.style.cssText = LBL_STYLE; l.textContent = txt;
-    return l;
-  }
-  function makeSel(id) {
-    const s = document.createElement('select');
-    s.id = id; s.style.cssText = SEL_STYLE;
-    return s;
-  }
-
+  const appType  = document.getElementById('corrAppType').value;
+  const listEl   = document.getElementById('corrAppMonthList');
+  const fieldsEl = document.getElementById('corrAppTimeFields');
+  if (!listEl || !fieldsEl) return;
+  listEl.innerHTML = '';
   fieldsEl.innerHTML = '';
+  _corrAppEntries  = [];
+  _corrAppSelected = null;
+  if (!currentUser) return;
 
-  if (!date || !currentUser) {
-    currentEl.textContent = '日付を選択してください';
+  const monthKey = todayKey().substring(0, 7);
+  const recs = getUserRecords();
+  const stLabels = { pending:'⏳ 申請中', approved:'✅ 承認済み', rejected:'🚫 却下' };
+  const stColors = { pending:'#FF9500', approved:'var(--green)', rejected:'var(--danger)' };
+
+  // 当月の該当申請をすべて収集
+  Object.entries(recs).sort((a,b)=>b[0].localeCompare(a[0])).forEach(([dateKey, r]) => {
+    if (!dateKey.startsWith(monthKey)) return;
+    const rec = migrateRec(r);
+    const d = new Date(dateKey.replace(/-/g,'/'));
+    const dateStr = (d.getMonth()+1)+'/'+d.getDate()+'（'+WEEKDAYS[d.getDay()]+'）';
+
+    if (appType === 'ot' && rec.ot) {
+      _corrAppEntries.push({ dateKey, dateStr, app: rec.ot, appIdx: null,
+        summary: `〜${rec.ot.plannedEnd}` });
+    } else if (appType === 'early' && rec.early) {
+      _corrAppEntries.push({ dateKey, dateStr, app: rec.early, appIdx: null,
+        summary: `${rec.early.startTime}〜8:00` });
+    } else if (appType === 'paid' && rec.paid) {
+      _corrAppEntries.push({ dateKey, dateStr, app: rec.paid, appIdx: null,
+        summary: `${rec.paid.startTime}〜${rec.paid.endTime}` });
+    } else if (appType === 'holiday') {
+      const arr = Array.isArray(rec.holiday) ? rec.holiday : (rec.holiday ? [rec.holiday] : []);
+      arr.forEach((h, i) => _corrAppEntries.push({ dateKey, dateStr, app: h, appIdx: i,
+        summary: `${h.workDate} ${h.startTime||''}〜${h.endTime||''}` }));
+    } else if (appType === 'misc') {
+      const arr = Array.isArray(rec.misc) ? rec.misc : (rec.misc ? [rec.misc] : []);
+      arr.forEach((m, i) => _corrAppEntries.push({ dateKey, dateStr, app: m, appIdx: i,
+        summary: `${m.subType}${m.startTime?' '+m.startTime:''}` }));
+    }
+  });
+
+  if (_corrAppEntries.length === 0) {
+    listEl.innerHTML = '<div style="padding:14px;text-align:center;color:var(--subtext);font-size:13px;">当月の申請がありません</div>';
     return;
   }
 
-  const rec = getRecByKey(currentUser, date);
+  _corrAppEntries.forEach((entry, i) => {
+    const item = document.createElement('div');
+    item.style.cssText = 'padding:11px 14px;cursor:pointer;border-bottom:1px solid var(--border);font-size:13px;display:flex;justify-content:space-between;align-items:center;transition:background 0.15s;';
+    item.innerHTML = `
+      <div>
+        <span style="font-weight:700;color:var(--text);">${entry.dateStr}</span>
+        <span style="margin-left:8px;color:var(--subtext);">${entry.summary}</span>
+      </div>
+      <span style="font-size:11px;font-weight:700;color:${stColors[entry.app.status]||'var(--subtext)'};">${stLabels[entry.app.status]||''}</span>`;
+    item.onclick = () => selectCorrAppEntry(i);
+    listEl.appendChild(item);
+  });
+}
+
+function selectCorrAppEntry(idx) {
+  // ハイライト
+  const listEl = document.getElementById('corrAppMonthList');
+  [...listEl.children].forEach((child, i) => {
+    child.style.background = i === idx ? 'var(--blue-light,#EAF4FF)' : '';
+    child.style.borderLeft = i === idx ? '3px solid var(--blue)' : '';
+  });
+
+  _corrAppSelected = _corrAppEntries[idx];
+  const entry  = _corrAppSelected;
+  const appType = document.getElementById('corrAppType').value;
+  const fieldsEl = document.getElementById('corrAppTimeFields');
+  fieldsEl.innerHTML = '';
+
+  const SEL = 'width:100%;padding:10px;border-radius:10px;border:1.5px solid var(--border);font-size:14px;margin-top:4px;';
+  const LBL = 'font-size:13px;font-weight:600;color:var(--text);margin-top:10px;display:block;';
+  function lbl(t){ const l=document.createElement('label'); l.style.cssText=LBL; l.textContent=t; return l; }
+  function sel(id){ const s=document.createElement('select'); s.id=id; s.style.cssText=SEL; return s; }
 
   if (appType === 'ot') {
-    const ot = rec.ot;
-    currentEl.innerHTML = ot
-      ? `残業終了予定：<strong>${ot.plannedEnd}</strong>（${ot.status === 'approved' ? '承認済み' : '申請中'}）`
-      : '（残業申請なし）';
-    fieldsEl.appendChild(makeLabel('新しい残業終了時刻'));
-    fieldsEl.appendChild(makeSel('corrAppOtEnd'));
-    buildTimeSel15WithKeep('corrAppOtEnd', ot?.plannedEnd || '');
-
+    fieldsEl.appendChild(lbl('新しい残業終了時刻'));
+    fieldsEl.appendChild(sel('corrAppOtEnd'));
+    buildTimeSel15WithKeep('corrAppOtEnd', entry.app.plannedEnd || '');
   } else if (appType === 'early') {
-    const early = rec.early;
-    currentEl.innerHTML = early
-      ? `早出：<strong>${early.startTime}〜8:00</strong>（${early.status === 'approved' ? '承認済み' : '申請中'}）`
-      : '（早出申請なし）';
-    fieldsEl.appendChild(makeLabel('新しい早出開始時刻'));
-    fieldsEl.appendChild(makeSel('corrAppEarlyStart'));
-    buildTimeSel15WithKeep('corrAppEarlyStart', early?.startTime || '');
-
+    fieldsEl.appendChild(lbl('新しい早出開始時刻'));
+    fieldsEl.appendChild(sel('corrAppEarlyStart'));
+    buildTimeSel15WithKeep('corrAppEarlyStart', entry.app.startTime || '');
   } else if (appType === 'paid') {
-    const paid = rec.paid;
-    currentEl.innerHTML = paid
-      ? `有給：<strong>${paid.startTime}〜${paid.endTime}</strong>（${paid.status === 'approved' ? '承認済み' : '申請中'}）`
-      : '（有給申請なし）';
-    fieldsEl.appendChild(makeLabel('新しい開始時刻'));
-    fieldsEl.appendChild(makeSel('corrAppPaidStart'));
-    fieldsEl.appendChild(makeLabel('新しい終了時刻'));
-    fieldsEl.appendChild(makeSel('corrAppPaidEnd'));
-    buildTimeSel15WithKeep('corrAppPaidStart', paid?.startTime || '');
-    buildTimeSel15WithKeep('corrAppPaidEnd',   paid?.endTime   || '');
-
+    fieldsEl.appendChild(lbl('新しい開始時刻'));
+    fieldsEl.appendChild(sel('corrAppPaidStart'));
+    fieldsEl.appendChild(lbl('新しい終了時刻'));
+    fieldsEl.appendChild(sel('corrAppPaidEnd'));
+    buildTimeSel15WithKeep('corrAppPaidStart', entry.app.startTime || '');
+    buildTimeSel15WithKeep('corrAppPaidEnd',   entry.app.endTime   || '');
   } else if (appType === 'holiday') {
-    const holiday = Array.isArray(rec.holiday)
-      ? rec.holiday[rec.holiday.length - 1]
-      : rec.holiday;
-    currentEl.innerHTML = holiday
-      ? `休日出勤：<strong>${holiday.workDate} ${holiday.startTime||''}〜${holiday.endTime||''}</strong>（${holiday.status === 'approved' ? '承認済み' : '申請中'}）`
-      : '（休日出勤申請なし）';
-    fieldsEl.appendChild(makeLabel('新しい開始時刻'));
-    fieldsEl.appendChild(makeSel('corrAppHolStart'));
-    fieldsEl.appendChild(makeLabel('新しい終了時刻'));
-    fieldsEl.appendChild(makeSel('corrAppHolEnd'));
-    buildTimeSel15WithKeep('corrAppHolStart', holiday?.startTime || '');
-    buildTimeSel15WithKeep('corrAppHolEnd',   holiday?.endTime   || '');
-
+    fieldsEl.appendChild(lbl('新しい開始時刻'));
+    fieldsEl.appendChild(sel('corrAppHolStart'));
+    fieldsEl.appendChild(lbl('新しい終了時刻'));
+    fieldsEl.appendChild(sel('corrAppHolEnd'));
+    buildTimeSel15WithKeep('corrAppHolStart', entry.app.startTime || '');
+    buildTimeSel15WithKeep('corrAppHolEnd',   entry.app.endTime   || '');
   } else if (appType === 'misc') {
-    const miscArr = Array.isArray(rec.misc) ? rec.misc : (rec.misc ? [rec.misc] : []);
-    currentEl.innerHTML = miscArr.length > 0
-      ? miscArr.map(m => `<strong>${m.subType}</strong>${m.startTime ? ' '+m.startTime : ''}`).join('、')
-      : '（その他申請なし）';
-    // その他申請は多様なためテキストで変更内容を記入
-    const lbl = makeLabel('変更したい内容');
-    const ta  = document.createElement('textarea');
+    const lbl2 = document.createElement('label');
+    lbl2.style.cssText = LBL; lbl2.textContent = '変更したい内容';
+    const ta = document.createElement('textarea');
     ta.id = 'corrAppMiscDetail';
     ta.placeholder = '例：特別休暇の終了時刻を17:00→18:00に変更したい';
     ta.style.cssText = 'width:100%;padding:10px;border-radius:10px;border:1.5px solid var(--border);font-size:13px;margin-top:4px;height:68px;resize:none;';
-    fieldsEl.appendChild(lbl);
+    fieldsEl.appendChild(lbl2);
     fieldsEl.appendChild(ta);
   }
 }
 
 function submitCorrReq() {
-  const date   = document.getElementById('corrReqDate').value;
-  if (!date) { showToast('日付を選択してください'); return; }
   const isClock  = document.getElementById('corrClockSection').style.display !== 'none';
+  // 打刻修正は corrReqDate、申請時間変更は選択した申請の日付を使う
+  const date = isClock
+    ? document.getElementById('corrReqDate').value
+    : (_corrAppSelected ? _corrAppSelected.dateKey : '');
+  if (!date) {
+    showToast(isClock ? '日付を選択してください' : '申請を一覧から選択してください');
+    return;
+  }
+  if (!isClock && !_corrAppSelected) { showToast('申請を一覧から選択してください'); return; }
   const reason   = document.getElementById('corrReqReason').value.trim();
   if (!reason) { showToast('依頼理由を入力してください'); return; }
 

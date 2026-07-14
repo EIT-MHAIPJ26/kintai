@@ -236,7 +236,8 @@
     .btn-confirm.purple{background:var(--purple);}
     .btn-confirm.blue{background:var(--blue);}
     .btn-cancel{padding:13px 18px;background:var(--bg);color:var(--subtext);border:none;border-radius:12px;font-size:14px;cursor:pointer;}
-    /* ボタン内の子要素がクリックを横取りしないようにする */
+    /* 全ボタン共通：カーソルとクリック領域 */
+    button { cursor: pointer; }
     button * { pointer-events: none; }
 
     /* メンバー管理モーダル */

@@ -651,21 +651,6 @@
     <select id="paidEndTime"></select>
     <label>理由（任意）</label>
     <textarea id="paidReason" placeholder="有給取得の理由（省略可）"></textarea>
-    <label>振替希望</label>
-    <div class="radio-group">
-      <label><input type="radio" name="paidComp" id="paidCompYes" value="yes" onchange="togglePaidComp()"> あり</label>
-      <label><input type="radio" name="paidComp" id="paidCompNo"  value="no"  onchange="togglePaidComp()" checked> なし</label>
-    </div>
-    <div id="paidCompSection" style="display:none">
-      <label>振替希望日</label>
-      <input type="date" id="paidCompDate"/>
-      <label>希望時間帯（任意）</label>
-      <div style="display:flex;align-items:center;gap:8px;">
-        <select id="paidCompTimeStart" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;background:var(--card);color:var(--text);"></select>
-        <span style="color:var(--subtext);">〜</span>
-        <select id="paidCompTimeEnd" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;background:var(--card);color:var(--text);"></select>
-      </div>
-    </div>
     <div class="modal-buttons">
       <button class="btn-cancel" onclick="hideModal('modalPaid')">キャンセル</button>
       <button class="btn-confirm" style="background:var(--orange)" onclick="submitPaid()">申請する</button>
@@ -2060,22 +2045,12 @@ function updatePaidEndTimes() {
   buildPaidTimes('paidEndTime', document.getElementById('paidStartTime').value);
 }
 
-function togglePaidComp() {
-  document.getElementById('paidCompSection').style.display =
-    document.getElementById('paidCompYes').checked ? '' : 'none';
-}
-
 function showPaidModal() {
   if (!currentUser) return;
   document.getElementById('paidDate').value = todayKey();
   document.getElementById('paidReason').value = '';
   buildPaidTimes('paidStartTime', null);
   updatePaidEndTimes();
-  document.getElementById('paidCompNo').checked = true;
-  document.getElementById('paidCompSection').style.display = 'none';
-  document.getElementById('paidCompDate').value = '';
-  buildTimeSel15('paidCompTimeStart', true, '');
-  buildTimeSel15('paidCompTimeEnd',   true, '');
   document.getElementById('modalPaid').classList.add('show');
 }
 
@@ -2086,19 +2061,13 @@ function submitPaid() {
   const reason    = document.getElementById('paidReason').value.trim();
   if (!date)    { showToast('対象日を選択してください'); return; }
   if (!endTime) { showToast('終了時刻を選択してください'); return; }
-  const wantComp      = document.getElementById('paidCompYes').checked;
-  const compDate      = document.getElementById('paidCompDate').value;
-  const compTimeStart = document.getElementById('paidCompTimeStart').value;
-  const compTimeEnd   = document.getElementById('paidCompTimeEnd').value;
-  if (wantComp && !compDate) { showToast('振替希望日を選択してください'); return; }
   const rec = getRecByKey(currentUser, date);
   if (!Array.isArray(rec.paid)) rec.paid = rec.paid ? [rec.paid] : [];
   const dup = rec.paid.find(p => p.status !== 'rejected' && p.startTime === startTime && p.endTime === endTime);
   if (dup) { showToast('同じ時間帯の有給申請があります'); return; }
-  rec.paid.push({ startTime, endTime, reason, wantComp, compDate: wantComp ? compDate : '', compTimeStart: wantComp ? compTimeStart : '', compTimeEnd: wantComp ? compTimeEnd : '', status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' });
+  rec.paid.push({ startTime, endTime, reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' });
   saveData(); renderAll(); hideModal('modalPaid');
-  const compStr = wantComp ? `　振替希望：${compDate}${compTimeStart?' '+compTimeStart+(compTimeEnd?'〜'+compTimeEnd:''):''}` : '';
-  notifyAdminsViaGAS('paid', startTime+'〜'+endTime+compStr, date);
+  notifyAdminsViaGAS('paid', startTime+'〜'+endTime, date);
   showToast('📅 有給申請を送信しました（'+startTime+'〜'+endTime+'）');
 }
 

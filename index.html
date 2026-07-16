@@ -1072,6 +1072,7 @@ function fetchAllFromGAS(onDone) {
             if (Array.isArray(rec.paid)    && rec.paid.length    > 0) data.records[name][dk].paid    = rec.paid;
             if (Array.isArray(rec.holiday) && rec.holiday.length > 0) data.records[name][dk].holiday = rec.holiday;
             if (Array.isArray(rec.corrReq) && rec.corrReq.length > 0) data.records[name][dk].corrReq = rec.corrReq;
+            if (Array.isArray(rec.misc)    && rec.misc.length    > 0) data.records[name][dk].misc    = rec.misc;
           }
           return;
         }

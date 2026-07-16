@@ -617,6 +617,21 @@
     <div style="font-size:12px;color:var(--subtext);margin-top:4px;">終了時刻：8:00 固定</div>
     <label>理由</label>
     <textarea id="earlyReason" placeholder="早出の理由を入力してください"></textarea>
+    <label>振替希望</label>
+    <div class="radio-group">
+      <label><input type="radio" name="earlyComp" id="earlyCompYes" value="yes" onchange="toggleEarlyComp()"> あり</label>
+      <label><input type="radio" name="earlyComp" id="earlyCompNo"  value="no"  onchange="toggleEarlyComp()" checked> なし</label>
+    </div>
+    <div id="earlyCompSection" style="display:none">
+      <label>振替希望日</label>
+      <input type="date" id="earlyCompDate"/>
+      <label>希望時間帯（任意）</label>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <select id="earlyCompTimeStart" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;background:var(--card);color:var(--text);"></select>
+        <span style="color:var(--subtext);">〜</span>
+        <select id="earlyCompTimeEnd" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;background:var(--card);color:var(--text);"></select>
+      </div>
+    </div>
     <div class="modal-buttons">
       <button class="btn-cancel" onclick="hideModal('modalEarly')">キャンセル</button>
       <button class="btn-confirm" style="background:var(--blue)" onclick="submitEarly()">申請する</button>
@@ -636,6 +651,21 @@
     <select id="paidEndTime"></select>
     <label>理由（任意）</label>
     <textarea id="paidReason" placeholder="有給取得の理由（省略可）"></textarea>
+    <label>振替希望</label>
+    <div class="radio-group">
+      <label><input type="radio" name="paidComp" id="paidCompYes" value="yes" onchange="togglePaidComp()"> あり</label>
+      <label><input type="radio" name="paidComp" id="paidCompNo"  value="no"  onchange="togglePaidComp()" checked> なし</label>
+    </div>
+    <div id="paidCompSection" style="display:none">
+      <label>振替希望日</label>
+      <input type="date" id="paidCompDate"/>
+      <label>希望時間帯（任意）</label>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <select id="paidCompTimeStart" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;background:var(--card);color:var(--text);"></select>
+        <span style="color:var(--subtext);">〜</span>
+        <select id="paidCompTimeEnd" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;background:var(--card);color:var(--text);"></select>
+      </div>
+    </div>
     <div class="modal-buttons">
       <button class="btn-cancel" onclick="hideModal('modalPaid')">キャンセル</button>
       <button class="btn-confirm" style="background:var(--orange)" onclick="submitPaid()">申請する</button>
@@ -692,11 +722,10 @@
     <select id="miscSubType" onchange="updateMiscFields()">
       <option value="遅刻">遅刻</option>
       <option value="早退">早退</option>
-      <option value="振替">振替</option>
       <option value="特別休暇">特別休暇</option>
       <option value="欠勤">欠勤</option>
     </select>
-    <!-- 通常の日付・時間グループ（振替以外） -->
+    <!-- 通常の日付・時間グループ -->
     <div id="miscDateGroup">
       <label id="miscDateLabel">対象日</label>
       <div style="display:flex;gap:8px;align-items:center;">
@@ -713,23 +742,22 @@
         <select id="miscEndTime" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:8px 10px;font-size:14px;background:var(--card);color:var(--text);"></select>
       </div>
     </div>
-    <!-- 振替専用フィールド -->
-    <div id="miscFurikaeGroup" style="display:none;">
-      <label>出勤日</label>
-      <input type="date" id="miscFurikaeWorkDate" style="width:100%;box-sizing:border-box;">
-      <label>勤務時間</label>
-      <div style="display:flex;gap:8px;align-items:center;">
-        <select id="miscFurikaeWorkStart" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:8px 10px;font-size:14px;background:var(--card);color:var(--text);"></select>
-        <span style="color:var(--subtext);">〜</span>
-        <select id="miscFurikaeWorkEnd" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:8px 10px;font-size:14px;background:var(--card);color:var(--text);"></select>
+    <!-- 遅刻・早退の振替希望（updateMiscFields で表示切替） -->
+    <div id="miscCompGroup" style="display:none;">
+      <label>振替希望</label>
+      <div class="radio-group">
+        <label><input type="radio" name="miscComp" id="miscCompYes" value="yes" onchange="toggleMiscComp()"> あり</label>
+        <label><input type="radio" name="miscComp" id="miscCompNo"  value="no"  onchange="toggleMiscComp()" checked> なし</label>
       </div>
-      <label>振替休日</label>
-      <input type="date" id="miscFurikaeTakeDate" style="width:100%;box-sizing:border-box;">
-      <label>振替時間</label>
-      <div style="display:flex;gap:8px;align-items:center;">
-        <select id="miscFurikaeTakeStart" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:8px 10px;font-size:14px;background:var(--card);color:var(--text);"></select>
-        <span style="color:var(--subtext);">〜</span>
-        <select id="miscFurikaeTakeEnd" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:8px 10px;font-size:14px;background:var(--card);color:var(--text);"></select>
+      <div id="miscCompSection" style="display:none">
+        <label>振替希望日</label>
+        <input type="date" id="miscCompDate"/>
+        <label>希望時間帯（任意）</label>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <select id="miscCompTimeStart" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:8px 10px;font-size:14px;background:var(--card);color:var(--text);"></select>
+          <span style="color:var(--subtext);">〜</span>
+          <select id="miscCompTimeEnd" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:8px 10px;font-size:14px;background:var(--card);color:var(--text);"></select>
+        </div>
       </div>
     </div>
     <label>理由・内容</label>
@@ -1961,11 +1989,21 @@ function buildEarlyTimes() {
   }
 }
 
+function toggleEarlyComp() {
+  document.getElementById('earlyCompSection').style.display =
+    document.getElementById('earlyCompYes').checked ? '' : 'none';
+}
+
 function showEarlyModal() {
   if (!currentUser) return;
   buildEarlyTimes();
   document.getElementById('earlyDate').value = todayKey();
   document.getElementById('earlyReason').value = '';
+  document.getElementById('earlyCompNo').checked = true;
+  document.getElementById('earlyCompSection').style.display = 'none';
+  document.getElementById('earlyCompDate').value = '';
+  buildTimeSel15('earlyCompTimeStart', true, '');
+  buildTimeSel15('earlyCompTimeEnd',   true, '');
   document.getElementById('modalEarly').classList.add('show');
 }
 
@@ -1975,12 +2013,18 @@ function submitEarly() {
   const reason    = document.getElementById('earlyReason').value.trim();
   if (!date)   { showToast('対象日を選択してください'); return; }
   if (!reason) { showToast('理由を入力してください'); return; }
+  const wantComp      = document.getElementById('earlyCompYes').checked;
+  const compDate      = document.getElementById('earlyCompDate').value;
+  const compTimeStart = document.getElementById('earlyCompTimeStart').value;
+  const compTimeEnd   = document.getElementById('earlyCompTimeEnd').value;
+  if (wantComp && !compDate) { showToast('振替希望日を選択してください'); return; }
   const rec = getRecByKey(currentUser, date);
   if (rec.early?.status === 'pending')  { showToast('申請中です'); return; }
   if (rec.early?.status === 'approved') { showToast('承認済みです'); return; }
-  rec.early = { startTime, reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
+  rec.early = { startTime, reason, wantComp, compDate: wantComp ? compDate : '', compTimeStart: wantComp ? compTimeStart : '', compTimeEnd: wantComp ? compTimeEnd : '', status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
   saveData(); renderAll(); hideModal('modalEarly');
-  notifyAdminsViaGAS('early', startTime+'〜8:00', date);
+  const compStr = wantComp ? `　振替希望：${compDate}${compTimeStart?' '+compTimeStart+(compTimeEnd?'〜'+compTimeEnd:''):''}` : '';
+  notifyAdminsViaGAS('early', startTime+'〜8:00'+compStr, date);
   showToast('🌅 早出申請を送信しました（'+startTime+'〜8:00）');
 }
 
@@ -2016,12 +2060,22 @@ function updatePaidEndTimes() {
   buildPaidTimes('paidEndTime', document.getElementById('paidStartTime').value);
 }
 
+function togglePaidComp() {
+  document.getElementById('paidCompSection').style.display =
+    document.getElementById('paidCompYes').checked ? '' : 'none';
+}
+
 function showPaidModal() {
   if (!currentUser) return;
   document.getElementById('paidDate').value = todayKey();
   document.getElementById('paidReason').value = '';
   buildPaidTimes('paidStartTime', null);
   updatePaidEndTimes();
+  document.getElementById('paidCompNo').checked = true;
+  document.getElementById('paidCompSection').style.display = 'none';
+  document.getElementById('paidCompDate').value = '';
+  buildTimeSel15('paidCompTimeStart', true, '');
+  buildTimeSel15('paidCompTimeEnd',   true, '');
   document.getElementById('modalPaid').classList.add('show');
 }
 
@@ -2032,14 +2086,19 @@ function submitPaid() {
   const reason    = document.getElementById('paidReason').value.trim();
   if (!date)    { showToast('対象日を選択してください'); return; }
   if (!endTime) { showToast('終了時刻を選択してください'); return; }
+  const wantComp      = document.getElementById('paidCompYes').checked;
+  const compDate      = document.getElementById('paidCompDate').value;
+  const compTimeStart = document.getElementById('paidCompTimeStart').value;
+  const compTimeEnd   = document.getElementById('paidCompTimeEnd').value;
+  if (wantComp && !compDate) { showToast('振替希望日を選択してください'); return; }
   const rec = getRecByKey(currentUser, date);
   if (!Array.isArray(rec.paid)) rec.paid = rec.paid ? [rec.paid] : [];
-  // 同じ時間帯で申請中・承認済みがあれば重複NG
   const dup = rec.paid.find(p => p.status !== 'rejected' && p.startTime === startTime && p.endTime === endTime);
   if (dup) { showToast('同じ時間帯の有給申請があります'); return; }
-  rec.paid.push({ startTime, endTime, reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' });
+  rec.paid.push({ startTime, endTime, reason, wantComp, compDate: wantComp ? compDate : '', compTimeStart: wantComp ? compTimeStart : '', compTimeEnd: wantComp ? compTimeEnd : '', status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' });
   saveData(); renderAll(); hideModal('modalPaid');
-  notifyAdminsViaGAS('paid', startTime+'〜'+endTime, date);
+  const compStr = wantComp ? `　振替希望：${compDate}${compTimeStart?' '+compTimeStart+(compTimeEnd?'〜'+compTimeEnd:''):''}` : '';
+  notifyAdminsViaGAS('paid', startTime+'〜'+endTime+compStr, date);
   showToast('📅 有給申請を送信しました（'+startTime+'〜'+endTime+'）');
 }
 
@@ -2429,6 +2488,11 @@ function markCorrReqDone(name, dateKey, idx) {
 // ============================================================
 //  その他申請
 // ============================================================
+function toggleMiscComp() {
+  document.getElementById('miscCompSection').style.display =
+    document.getElementById('miscCompYes').checked ? '' : 'none';
+}
+
 function showMiscModal() {
   if (!currentUser) return;
   document.getElementById('miscDate').value = todayKey();
@@ -2437,51 +2501,47 @@ function showMiscModal() {
   buildTimeSel15('miscStartTime', true, '');
   buildTimeSel15('miscEndTime',   true, '');
   document.getElementById('miscReason').value = '';
-  document.getElementById('miscFurikaeWorkDate').value  = todayKey();
-  buildTimeSel15('miscFurikaeWorkStart', false, '08:00');
-  buildTimeSel15('miscFurikaeWorkEnd',   false, '17:15');
-  document.getElementById('miscFurikaeTakeDate').value  = '';
-  buildTimeSel15('miscFurikaeTakeStart', true, '');
-  buildTimeSel15('miscFurikaeTakeEnd',   true, '');
+  document.getElementById('miscCompNo').checked = true;
+  document.getElementById('miscCompSection').style.display = 'none';
+  document.getElementById('miscCompDate').value = '';
+  buildTimeSel15('miscCompTimeStart', true, '');
+  buildTimeSel15('miscCompTimeEnd',   true, '');
   updateMiscFields();
   document.getElementById('modalMisc').classList.add('show');
 }
 
 function updateMiscFields() {
-  const subType      = document.getElementById('miscSubType').value;
-  const timeGroup    = document.getElementById('miscTimeGroup');
-  const timeLabel    = document.getElementById('miscTimeLabel');
-  const dateLabel    = document.getElementById('miscDateLabel');
-  const dateGroup    = document.getElementById('miscDateGroup');
-  const endDate      = document.getElementById('miscEndDate');
-  const sep          = document.getElementById('miscDateRangeSep');
-  const furikaeGroup = document.getElementById('miscFurikaeGroup');
+  const subType    = document.getElementById('miscSubType').value;
+  const timeGroup  = document.getElementById('miscTimeGroup');
+  const timeLabel  = document.getElementById('miscTimeLabel');
+  const dateLabel  = document.getElementById('miscDateLabel');
+  const dateGroup  = document.getElementById('miscDateGroup');
+  const endDate    = document.getElementById('miscEndDate');
+  const sep        = document.getElementById('miscDateRangeSep');
+  const compGroup  = document.getElementById('miscCompGroup');
 
-  if (subType === '振替') {
-    // 振替：専用フィールドを表示、通常フィールドを非表示
-    dateGroup.style.display    = 'none';
-    timeGroup.style.display    = 'none';
-    furikaeGroup.style.display = '';
-  } else if (subType === '特別休暇') {
-    dateGroup.style.display    = '';
-    timeGroup.style.display    = 'none';
-    furikaeGroup.style.display = 'none';
-    dateLabel.textContent = '対象期間';
-    endDate.style.display = '';
-    sep.style.display     = '';
+  if (subType === '特別休暇') {
+    dateGroup.style.display  = '';
+    timeGroup.style.display  = 'none';
+    compGroup.style.display  = 'none';
+    dateLabel.textContent    = '対象期間';
+    endDate.style.display    = '';
+    sep.style.display        = '';
   } else {
-    dateGroup.style.display    = '';
-    timeGroup.style.display    = '';
-    furikaeGroup.style.display = 'none';
-    dateLabel.textContent = '対象日';
-    endDate.style.display = 'none';
-    sep.style.display     = 'none';
+    dateGroup.style.display  = '';
+    timeGroup.style.display  = '';
+    dateLabel.textContent    = '対象日';
+    endDate.style.display    = 'none';
+    sep.style.display        = 'none';
     if (subType === '遅刻') {
-      timeLabel.textContent = '時間（※遅刻対象となる時間）';
+      timeLabel.textContent  = '時間（※遅刻対象となる時間）';
+      compGroup.style.display = '';
     } else if (subType === '早退') {
-      timeLabel.textContent = '時間（※早退対象となる時間）';
+      timeLabel.textContent  = '時間（※早退対象となる時間）';
+      compGroup.style.display = '';
     } else {
-      timeLabel.textContent = '時間（任意）';
+      timeLabel.textContent  = '時間（任意）';
+      compGroup.style.display = 'none';
     }
   }
 }
@@ -2489,30 +2549,6 @@ function updateMiscFields() {
 function submitMisc() {
   const subType   = document.getElementById('miscSubType').value;
   const reason    = document.getElementById('miscReason').value.trim();
-
-  if (subType === '振替') {
-    // 振替専用バリデーション
-    const workDate   = document.getElementById('miscFurikaeWorkDate').value;
-    const workStart  = document.getElementById('miscFurikaeWorkStart').value;
-    const workEnd    = document.getElementById('miscFurikaeWorkEnd').value;
-    const takeDate   = document.getElementById('miscFurikaeTakeDate').value;
-    const takeStart  = document.getElementById('miscFurikaeTakeStart').value;
-    const takeEnd    = document.getElementById('miscFurikaeTakeEnd').value;
-    if (!workDate)  { showToast('出勤日を選択してください'); return; }
-    if (!takeDate)  { showToast('振替休日を選択してください'); return; }
-    if (!reason)    { showToast('理由・内容を入力してください'); return; }
-    const rec = getRecByKey(currentUser, workDate);
-    if (!Array.isArray(rec.misc)) rec.misc = [];
-    rec.misc.push({ subType, date: workDate, workDate, workStart, workEnd, takeDate, takeStart, takeEnd, reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' });
-    saveData(); renderAll(); hideModal('modalMisc');
-    const wTimeStr = workStart ? ' '+workStart+(workEnd?'〜'+workEnd:'') : '';
-    const tTimeStr = takeStart ? ' '+takeStart+(takeEnd?'〜'+takeEnd:'') : '';
-    const detail  = `振替　出勤日：${workDate}${wTimeStr}　振替休日：${takeDate}${tTimeStr}　${reason}`;
-    notifyAdminsViaGAS('misc', detail, workDate);
-    showToast('📋 振替申請を送信しました');
-    return;
-  }
-
   const date      = document.getElementById('miscDate').value;
   const endDate   = subType === '特別休暇' ? document.getElementById('miscEndDate').value : '';
   const startTime = document.getElementById('miscStartTime').value;
@@ -2520,13 +2556,25 @@ function submitMisc() {
   if (!date)   { showToast('対象日を選択してください'); return; }
   if (subType === '特別休暇' && !endDate) { showToast('終了日を選択してください'); return; }
   if (!reason) { showToast('理由・内容を入力してください'); return; }
+
+  // 遅刻・早退の振替希望
+  let wantComp = false, compDate = '', compTimeStart = '', compTimeEnd = '';
+  if (subType === '遅刻' || subType === '早退') {
+    wantComp      = document.getElementById('miscCompYes').checked;
+    compDate      = document.getElementById('miscCompDate').value;
+    compTimeStart = document.getElementById('miscCompTimeStart').value;
+    compTimeEnd   = document.getElementById('miscCompTimeEnd').value;
+    if (wantComp && !compDate) { showToast('振替希望日を選択してください'); return; }
+  }
+
   const rec = getRecByKey(currentUser, date);
   if (!Array.isArray(rec.misc)) rec.misc = [];
-  rec.misc.push({ subType, date, endDate, startTime, endTime, reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' });
+  rec.misc.push({ subType, date, endDate, startTime, endTime, wantComp, compDate: wantComp ? compDate : '', compTimeStart: wantComp ? compTimeStart : '', compTimeEnd: wantComp ? compTimeEnd : '', reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' });
   saveData(); renderAll(); hideModal('modalMisc');
   const dateStr  = endDate ? date+'〜'+endDate : date;
   const timeStr  = startTime ? ' '+startTime+(endTime?'〜'+endTime:'') : '';
-  const detail   = subType + ' ' + dateStr + timeStr + '　' + reason;
+  const compStr  = wantComp ? `　振替希望：${compDate}${compTimeStart?' '+compTimeStart+(compTimeEnd?'〜'+compTimeEnd:''):''}` : '';
+  const detail   = subType + ' ' + dateStr + timeStr + compStr + '　' + reason;
   notifyAdminsViaGAS('misc', detail, date);
   showToast('📋 その他申請（'+subType+'）を送信しました');
 }
@@ -3488,19 +3536,16 @@ function renderApprovalList() {
     if(kind==='app'){
       const {rec,type,typeInfo,app,idx}=entry;
       let detailHtml='';
+      const compBadge = (a) => a.wantComp
+        ? `　<span style="font-size:11px;background:#FFF0DC;color:#FF9500;padding:2px 6px;border-radius:5px;">振替希望：${a.compDate}${a.compTimeStart?' '+a.compTimeStart+(a.compTimeEnd?'〜'+a.compTimeEnd:''):''}${a.compTime?' '+a.compTime:''}</span>`
+        : '';
       if(type==='ot')           detailHtml=`${typeInfo.icon} 残業予定 <strong>${app.plannedEnd}</strong>まで`;
       else if(type==='otExt')   detailHtml=`${typeInfo.icon} <strong>${rec.ot?.plannedEnd}→${app.plannedEnd}</strong>まで延長`;
-      else if(type==='early')   detailHtml=`${typeInfo.icon} 早出 <strong>${app.startTime}〜8:00</strong>`;
-      else if(type==='paid')    detailHtml=`${typeInfo.icon} 有給 <strong>${app.startTime}〜${app.endTime}</strong>`;
+      else if(type==='early')   detailHtml=`${typeInfo.icon} 早出 <strong>${app.startTime}〜8:00</strong>${compBadge(app)}`;
+      else if(type==='paid')    detailHtml=`${typeInfo.icon} 有給 <strong>${app.startTime}〜${app.endTime}</strong>${compBadge(app)}`;
       else if(type==='holiday') detailHtml=`${typeInfo.icon} 休日出勤 <strong>${app.workDate}</strong> ${app.startTime||''}〜${app.endTime||''} ${app.wantComp?`振替希望：${app.compDate}${app.compTime?' '+app.compTime:''}`:'（振替なし）'}`;
       else if(type==='misc'){
-        if(app.subType==='振替'){
-          const wTime=app.workStart?` ${app.workStart}${app.workEnd?'〜'+app.workEnd:''}`:'' ;
-          const tTime=app.takeStart?` ${app.takeStart}${app.takeEnd?'〜'+app.takeEnd:''}`:'' ;
-          detailHtml=`${typeInfo.icon} 振替　出勤日：<strong>${app.workDate}${wTime}</strong>　振替休日：<strong>${app.takeDate}${tTime}</strong>`;
-        } else {
-          detailHtml=`${typeInfo.icon} ${app.subType}${app.endDate?' <strong>'+app.date+'〜'+app.endDate+'</strong>':app.startTime?' <strong>'+app.startTime+(app.endTime?'〜'+app.endTime:'')+'</strong>':''}`;
-        }
+        detailHtml=`${typeInfo.icon} ${app.subType}${app.endDate?' <strong>'+app.date+'〜'+app.endDate+'</strong>':app.startTime?' <strong>'+app.startTime+(app.endTime?'〜'+app.endTime:'')+'</strong>':''}${compBadge(app)}`;
       }
       const isSelf=name===currentUser;
       const idxArg=idx!==null?`,${idx}`:'';

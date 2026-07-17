@@ -936,6 +936,29 @@
   </div>
 </div>
 
+<!-- 変更申請モーダル -->
+<div class="modal-overlay" id="modalChangeReq" onclick="closeModalBg(event,'modalChangeReq')">
+  <div class="modal">
+    <h3>📝 変更申請</h3>
+    <div id="changeReqCurrentDetail" style="background:#F2F2F7;border-radius:10px;padding:11px 14px;margin-bottom:14px;font-size:13px;line-height:1.7;color:var(--text);"></div>
+    <label style="font-weight:700;font-size:13px;">申請の種類</label>
+    <div class="radio-group" style="margin-top:6px;margin-bottom:14px;">
+      <label><input type="radio" name="changeReqType" id="changeReqCancel" value="cancel" onchange="toggleChangeReqType()" checked> キャンセル申請</label>
+      <label><input type="radio" name="changeReqType" id="changeReqChange" value="change" onchange="toggleChangeReqType()"> 変更申請（日時・時間の変更）</label>
+    </div>
+    <div id="changeReqNewDetailSection" style="display:none">
+      <label style="font-weight:700;font-size:13px;">変更後の内容</label>
+      <textarea id="changeReqNewDetail" rows="2" placeholder="例：9:00〜12:00 に変更したい" style="width:100%;border:1px solid var(--border);border-radius:8px;padding:8px;font-size:14px;margin-top:5px;box-sizing:border-box;"></textarea>
+    </div>
+    <label style="font-weight:700;font-size:13px;">理由</label>
+    <textarea id="changeReqReason" rows="2" placeholder="変更・キャンセルの理由を入力してください" style="width:100%;border:1px solid var(--border);border-radius:8px;padding:8px;font-size:14px;margin-top:5px;box-sizing:border-box;"></textarea>
+    <div class="modal-buttons" style="margin-top:16px;">
+      <button class="btn-cancel" onclick="hideModal('modalChangeReq')">閉じる</button>
+      <button class="btn-confirm" onclick="submitChangeReq()">申請する</button>
+    </div>
+  </div>
+</div>
+
 <!-- 出勤リマインダーバナー -->
 <div class="checkin-banner" id="checkinBanner" style="display:none">
   <span class="rb-icon">🌅</span>
@@ -1841,6 +1864,124 @@ function cancelAppByDate(type, dateKey, idx) {
   saveData(); renderAll();
   syncRecordToGAS(currentUser, dateKey);
   showToast('🗑️ '+typeName+'を取り消しました');
+}
+
+// ============================================================
+//  変更申請（メンバー → 管理者）
+// ============================================================
+let _changeReqCtx = null;
+
+function showChangeReqModal(appType, dateKey, idx) {
+  if (!currentUser) return;
+  const rec = getRecByKey(currentUser, dateKey);
+  const val = rec[appType];
+  const appIdx = (idx !== null && idx !== 'null' && idx !== undefined) ? parseInt(idx) : null;
+  const app = (appIdx !== null && Array.isArray(val)) ? val[appIdx] : val;
+  if (!app) return;
+  if (app.changeReq?.status === 'pending') { showToast('変更申請が処理中です'); return; }
+
+  _changeReqCtx = { appType, dateKey, appIdx };
+
+  // 現在の申請内容を表示
+  let detailText = '';
+  if (appType === 'early')  detailText = `早出申請：${app.startTime}〜8:00`;
+  else if (appType === 'paid')  detailText = `有給申請：${app.startTime}〜${app.endTime}`;
+  else if (appType === 'misc') {
+    detailText = app.subType + (app.startTime ? ' '+app.startTime+(app.endTime?'〜'+app.endTime:'') : '');
+  }
+  const d = new Date(dateKey.replace(/-/g,'/'));
+  const dateStr = (d.getMonth()+1)+'/'+d.getDate()+'（'+WEEKDAYS[d.getDay()]+'）';
+  document.getElementById('changeReqCurrentDetail').innerHTML =
+    `📅 <strong>${dateStr}</strong><br>📋 ${detailText}`;
+
+  document.getElementById('changeReqCancel').checked = true;
+  document.getElementById('changeReqNewDetailSection').style.display = 'none';
+  document.getElementById('changeReqNewDetail').value = '';
+  document.getElementById('changeReqReason').value = '';
+  document.getElementById('modalChangeReq').classList.add('show');
+}
+
+function toggleChangeReqType() {
+  const isChange = document.getElementById('changeReqChange').checked;
+  document.getElementById('changeReqNewDetailSection').style.display = isChange ? '' : 'none';
+}
+
+function submitChangeReq() {
+  if (!currentUser || !_changeReqCtx) return;
+  const { appType, dateKey, appIdx } = _changeReqCtx;
+  const rec = getRecByKey(currentUser, dateKey);
+  const val = rec[appType];
+  const app = (appIdx !== null && Array.isArray(val)) ? val[appIdx] : val;
+  if (!app) return;
+
+  const reqType   = document.getElementById('changeReqCancel').checked ? 'cancel' : 'change';
+  const newDetail = document.getElementById('changeReqNewDetail').value.trim();
+  const reason    = document.getElementById('changeReqReason').value.trim();
+
+  if (reqType === 'change' && !newDetail) { showToast('変更後の内容を入力してください'); return; }
+  if (!reason) { showToast('理由を入力してください'); return; }
+
+  app.changeReq = { reqType, newDetail: reqType==='change'?newDetail:'', reason,
+    status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
+
+  saveData(); renderAll(); hideModal('modalChangeReq');
+
+  const typeLabel = APP_TYPES.find(t=>t.key===appType)?.label || appType;
+  const crLabel   = reqType==='cancel' ? 'キャンセル申請' : '変更申請';
+  const notifDetail = reqType==='cancel' ? `${typeLabel}のキャンセル希望` : `${typeLabel}の変更希望：${newDetail}`;
+  notifyAdminsViaGAS(appType, notifDetail, dateKey);
+  showToast(`📝 ${typeLabel}の${crLabel}を送信しました`);
+}
+
+// 管理者：変更申請を承認
+function approveChangeReq(name, dateKey, appType, appIdx) {
+  const rec = getRecByKey(name, dateKey);
+  const val = rec[appType];
+  const idx = (appIdx !== null && appIdx !== 'null' && appIdx !== undefined) ? parseInt(appIdx) : null;
+  const app = (idx !== null && Array.isArray(val)) ? val[idx] : val;
+  if (!app?.changeReq) return;
+  const typeLabel = APP_TYPES.find(t=>t.key===appType)?.label || appType;
+
+  if (app.changeReq.reqType === 'cancel') {
+    if (!confirm(`${name}さんの${typeLabel}をキャンセルしてよろしいですか？`)) return;
+    if (idx !== null && Array.isArray(val)) {
+      rec[appType].splice(idx, 1);
+    } else {
+      rec[appType] = null;
+    }
+  } else {
+    app.changeReq.status    = 'approved';
+    app.changeReq.approvedBy= currentUser;
+    app.changeReq.approvedAt= Date.now();
+  }
+  saveData(); renderAll();
+  syncRecordToGAS(name, dateKey);
+  showToast(`✅ ${name}さんの${typeLabel}の変更申請を承認しました`);
+}
+
+// 管理者：変更申請を却下
+let _changeReqRejectCtx = null;
+function showChangeReqRejectModal(name, dateKey, appType, appIdx) {
+  _changeReqRejectCtx = { name, dateKey, appType, appIdx };
+  const comment = prompt('却下理由を入力してください（任意）：');
+  if (comment === null) return; // キャンセル
+  rejectChangeReq(name, dateKey, appType, appIdx, comment);
+}
+
+function rejectChangeReq(name, dateKey, appType, appIdx, comment) {
+  const rec = getRecByKey(name, dateKey);
+  const val = rec[appType];
+  const idx = (appIdx !== null && appIdx !== 'null' && appIdx !== undefined) ? parseInt(appIdx) : null;
+  const app = (idx !== null && Array.isArray(val)) ? val[idx] : val;
+  if (!app?.changeReq) return;
+  app.changeReq.status     = 'rejected';
+  app.changeReq.approvedBy = currentUser;
+  app.changeReq.approvedAt = Date.now();
+  app.changeReq.comment    = comment || '';
+  saveData(); renderAll();
+  syncRecordToGAS(name, dateKey);
+  const typeLabel = APP_TYPES.find(t=>t.key===appType)?.label || appType;
+  showToast(`🚫 ${name}さんの${typeLabel}の変更申請を却下しました`);
 }
 
 // 早出申請の取り消し（単体型）
@@ -3300,6 +3441,23 @@ function renderMyApplications() {
       reapplyBtn = `<button onclick="showOtReapplyModal('${dateKey}')" style="margin-left:8px;font-size:11px;padding:3px 9px;border:1px solid var(--purple);border-radius:6px;background:transparent;color:var(--purple);cursor:pointer;">🔄 再申請</button>`;
     }
 
+    // 変更申請ボタン（承認済み & holiday/ot以外）
+    let changeReqHtml = '';
+    if (app.status === 'approved' && !['holiday','ot'].includes(typeInfo.key)) {
+      const cr = app.changeReq;
+      if (!cr || cr.status === 'rejected') {
+        changeReqHtml = `<button onclick="showChangeReqModal('${typeInfo.key}','${dateKey}',${appIdx!==null?appIdx:'null'})" style="margin-left:8px;font-size:11px;padding:3px 9px;border:1px solid #FF9500;border-radius:6px;background:transparent;color:#FF9500;cursor:pointer;">📝 変更申請</button>`;
+      } else if (cr.status === 'pending') {
+        changeReqHtml = `<span style="margin-left:8px;font-size:11px;padding:2px 8px;border-radius:6px;background:#FFF3CD;color:#FF9500;font-weight:700;">⏳ 変更申請中</span>`;
+      } else if (cr.status === 'approved') {
+        changeReqHtml = `<span style="margin-left:8px;font-size:11px;padding:2px 8px;border-radius:6px;background:#E8F9EF;color:#05A847;font-weight:700;">✅ 変更承認済み</span>`;
+      }
+    }
+
+    // 変更申請が却下された場合のコメント表示
+    const changeReqRejectTxt = (app.changeReq?.status === 'rejected' && app.changeReq?.comment)
+      ? `<div style="font-size:12px;color:var(--danger);margin-top:3px;">💬 変更却下：${app.changeReq.comment}</div>` : '';
+
     const item = document.createElement('div');
     item.className = 'myapp-item';
     item.innerHTML = `
@@ -3310,10 +3468,11 @@ function renderMyApplications() {
       <div class="myapp-detail">${detail}</div>
       ${app.reason ? `<div class="myapp-reason">📝 ${app.reason}</div>` : ''}
       ${commentTxt}
+      ${changeReqRejectTxt}
       <div>
         <span class="myapp-status ${app.status}">${stIcons[app.status]} ${stLabels[app.status]}</span>
         ${approverTxt}
-        ${cancelBtn}${reapplyBtn}
+        ${cancelBtn}${reapplyBtn}${changeReqHtml}
       </div>`;
     list.appendChild(item);
   });
@@ -3434,6 +3593,12 @@ function renderApprovalTab() {
       if(rec.ot?.status==='approved' && rec.ot?.extension?.status==='pending') count++;
       // 修正依頼も集計
       if(Array.isArray(rec.corrReq)) count += rec.corrReq.filter(c=>c.status==='pending').length;
+      // 変更申請も集計
+      APP_TYPES.forEach(t=>{
+        const val=rec[t.key];
+        const apps=Array.isArray(val)?val:(val?[val]:[]);
+        apps.forEach(a=>{ if(a?.changeReq?.status==='pending') count++; });
+      });
     });
   });
   const badge=document.getElementById('approvalBadge');
@@ -3474,6 +3639,17 @@ function renderApprovalList() {
           allItems.push({kind:'corr',name,dateKey,rec,req,idx});
         });
       }
+      // 変更申請（承認済み申請に attached された changeReq）
+      APP_TYPES.forEach(t=>{
+        const val=rec[t.key];
+        const apps=Array.isArray(val)?val:(val?[val]:[]);
+        apps.forEach((app,idx)=>{
+          if(!app?.changeReq) return;
+          const cr=app.changeReq;
+          if(!dateKey.startsWith(monthKey) && cr.status!=='pending') return;
+          allItems.push({kind:'changeReq',name,dateKey,rec,appType:t.key,typeInfo:t,app,appIdx:Array.isArray(val)?idx:null,cr});
+        });
+      });
     });
   });
 
@@ -3481,8 +3657,8 @@ function renderApprovalList() {
   allItems.sort((a,b)=>{
     const dk = b.dateKey.localeCompare(a.dateKey);
     if(dk!==0) return dk;
-    const ta = a.kind==='app' ? (a.app.appliedAt||0) : (a.req.appliedAt||0);
-    const tb = b.kind==='app' ? (b.app.appliedAt||0) : (b.req.appliedAt||0);
+    const ta = a.kind==='app' ? (a.app.appliedAt||0) : a.kind==='changeReq' ? (a.cr.appliedAt||0) : (a.req.appliedAt||0);
+    const tb = b.kind==='app' ? (b.app.appliedAt||0) : b.kind==='changeReq' ? (b.cr.appliedAt||0) : (b.req.appliedAt||0);
     return tb-ta;
   });
 
@@ -3542,6 +3718,34 @@ function renderApprovalList() {
         <div class="approval-detail">${detailHtml} ${approverTxt}</div>
         <div class="approval-reason">📝 ${app.reason||'（理由なし）'}</div>
         ${actionHtml}`;
+      list.appendChild(item);
+
+    } else if(kind==='changeReq'){
+      // 変更申請
+      const {name,dateKey,appType,typeInfo,app,appIdx,cr}=entry;
+      const d2=new Date(dateKey.replace(/-/g,'/'));
+      const dateStr2=(d2.getMonth()+1)+'/'+d2.getDate()+'（'+WEEKDAYS[d2.getDay()]+'）';
+      const crTypeTxt = cr.reqType==='cancel' ? 'キャンセル申請' : '変更申請';
+      const crStatusBadge = cr.status==='pending' ? statusBadge.pending : cr.status==='approved' ? statusBadge.approved : statusBadge.rejected;
+      const appIdxArg = appIdx!==null ? `,${appIdx}` : ',null';
+      const item=document.createElement('div');
+      item.className='corr-req-item'+(cr.status!=='pending'?' corr-req-done':'');
+      item.innerHTML=`
+        <div class="approval-header">
+          <span class="approval-name">👤 ${name}</span>
+          <span class="approval-date">${dateStr2} <span style="font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px;background:#FFF0DC;">${typeInfo.label}の${crTypeTxt}</span> ${crStatusBadge}</span>
+        </div>
+        <div style="background:white;border-radius:8px;padding:8px 10px;margin:6px 0 4px;font-size:13px;border:1px solid #FFE0A8;">
+          <div style="font-size:11px;color:#FF9500;font-weight:700;margin-bottom:4px;">📋 変更内容</div>
+          <div>${cr.reqType==='cancel'?'<strong>キャンセル希望</strong>':`変更後：<strong>${cr.newDetail}</strong>`}</div>
+        </div>
+        <div class="approval-reason">📝 ${cr.reason||'（理由なし）'}</div>
+        ${cr.approvedBy?`<div style="margin-top:4px;font-size:12px;color:var(--subtext);">（${cr.approvedBy}が${cr.status==='approved'?'承認':'却下'}）</div>`:''}
+        ${cr.status==='pending'?`
+        <div class="approval-buttons">
+          <button class="btn-approve" onclick="approveChangeReq('${name}','${dateKey}','${appType}'${appIdxArg})">✅ 承認${cr.reqType==='cancel'?'（申請を削除）':''}</button>
+          <button class="btn-reject" onclick="showChangeReqRejectModal('${name}','${dateKey}','${appType}'${appIdxArg})">🚫 却下</button>
+        </div>`:''}`;
       list.appendChild(item);
 
     } else {

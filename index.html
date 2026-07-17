@@ -946,9 +946,25 @@
       <label><input type="radio" name="changeReqType" id="changeReqCancel" value="cancel" onchange="toggleChangeReqType()" checked> キャンセル申請</label>
       <label><input type="radio" name="changeReqType" id="changeReqChange" value="change" onchange="toggleChangeReqType()"> 変更申請（日時・時間の変更）</label>
     </div>
-    <div id="changeReqNewDetailSection" style="display:none">
-      <label style="font-weight:700;font-size:13px;">変更後の内容</label>
-      <textarea id="changeReqNewDetail" rows="2" placeholder="例：9:00〜12:00 に変更したい" style="width:100%;border:1px solid var(--border);border-radius:8px;padding:8px;font-size:14px;margin-top:5px;box-sizing:border-box;"></textarea>
+    <!-- 変更フィールド（変更申請選択時のみ表示） -->
+    <div id="changeReqFields" style="display:none">
+      <div id="changeReqDateRow" style="margin-bottom:12px;">
+        <label style="font-weight:700;font-size:13px;">変更後の日付</label>
+        <div style="margin-top:5px;">
+          <input type="date" id="changeReqDate" style="border:1px solid var(--border);border-radius:8px;padding:7px 10px;font-size:14px;"/>
+          <span style="font-size:11px;color:var(--subtext);margin-left:8px;">変更なしの場合はそのままで</span>
+        </div>
+      </div>
+      <div id="changeReqTimeRow" style="margin-bottom:12px;">
+        <label id="changeReqTimeLabel" style="font-weight:700;font-size:13px;">変更後の時間</label>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:5px;flex-wrap:wrap;">
+          <select id="changeReqStartTime" style="border:1px solid var(--border);border-radius:8px;padding:7px 10px;font-size:14px;"></select>
+          <span id="changeReqSep" style="color:var(--subtext);">〜</span>
+          <select id="changeReqEndTime" style="border:1px solid var(--border);border-radius:8px;padding:7px 10px;font-size:14px;"></select>
+          <span id="changeReqEndFixed" style="font-size:14px;color:var(--subtext);display:none;"></span>
+        </div>
+        <div style="font-size:11px;color:var(--subtext);margin-top:4px;">変更なしの場合はそのままで</div>
+      </div>
     </div>
     <label style="font-weight:700;font-size:13px;">理由</label>
     <textarea id="changeReqReason" rows="2" placeholder="変更・キャンセルの理由を入力してください" style="width:100%;border:1px solid var(--border);border-radius:8px;padding:8px;font-size:14px;margin-top:5px;box-sizing:border-box;"></textarea>
@@ -1883,27 +1899,64 @@ function showChangeReqModal(appType, dateKey, idx) {
   _changeReqCtx = { appType, dateKey, appIdx };
 
   // 現在の申請内容を表示
-  let detailText = '';
-  if (appType === 'early')  detailText = `早出申請：${app.startTime}〜8:00`;
-  else if (appType === 'paid')  detailText = `有給申請：${app.startTime}〜${app.endTime}`;
-  else if (appType === 'misc') {
-    detailText = app.subType + (app.startTime ? ' '+app.startTime+(app.endTime?'〜'+app.endTime:'') : '');
-  }
   const d = new Date(dateKey.replace(/-/g,'/'));
   const dateStr = (d.getMonth()+1)+'/'+d.getDate()+'（'+WEEKDAYS[d.getDay()]+'）';
+  let detailText = '';
+  if (appType === 'early') detailText = `早出申請：${app.startTime}〜8:00`;
+  else if (appType === 'paid') detailText = `有給申請：${app.startTime}〜${app.endTime}`;
+  else if (appType === 'misc') detailText = app.subType+(app.startTime?' '+app.startTime+(app.endTime?'〜'+app.endTime:''):'');
   document.getElementById('changeReqCurrentDetail').innerHTML =
-    `📅 <strong>${dateStr}</strong><br>📋 ${detailText}`;
+    `📅 <strong>${dateStr}</strong>　📋 ${detailText}`;
 
+  // ラジオ初期化
   document.getElementById('changeReqCancel').checked = true;
-  document.getElementById('changeReqNewDetailSection').style.display = 'none';
-  document.getElementById('changeReqNewDetail').value = '';
+  document.getElementById('changeReqFields').style.display = 'none';
   document.getElementById('changeReqReason').value = '';
+
+  // 日付フィールドに現在値をセット
+  const appDate = (appType === 'misc' && app.date) ? app.date : dateKey;
+  document.getElementById('changeReqDate').value = appDate;
+
+  // 時間セレクタを申請タイプに合わせてセットアップ
+  const startSel = document.getElementById('changeReqStartTime');
+  const endSel   = document.getElementById('changeReqEndTime');
+  const endFixed = document.getElementById('changeReqEndFixed');
+  const timeLbl  = document.getElementById('changeReqTimeLabel');
+  const sep      = document.getElementById('changeReqSep');
+
+  if (appType === 'early') {
+    timeLbl.textContent = '変更後の開始時間';
+    buildTimeSel15('changeReqStartTime', true, app.startTime||'');
+    endSel.style.display   = 'none';
+    endFixed.style.display = '';
+    endFixed.textContent   = '〜8:00（固定）';
+    sep.style.display      = 'none';
+  } else if (appType === 'paid') {
+    timeLbl.textContent = '変更後の時間帯';
+    buildTimeSel15('changeReqStartTime', true, app.startTime||'');
+    buildTimeSel15('changeReqEndTime',   true, app.endTime||'');
+    endSel.style.display   = '';
+    endFixed.style.display = 'none';
+    sep.style.display      = '';
+  } else if (appType === 'misc') {
+    const hasTime = ['遅刻','早退'].includes(app.subType);
+    document.getElementById('changeReqTimeRow').style.display = hasTime ? '' : 'none';
+    if (hasTime) {
+      timeLbl.textContent = '変更後の時間帯';
+      buildTimeSel15('changeReqStartTime', true, app.startTime||'');
+      buildTimeSel15('changeReqEndTime',   true, app.endTime||'');
+      endSel.style.display   = '';
+      endFixed.style.display = 'none';
+      sep.style.display      = '';
+    }
+  }
+
   document.getElementById('modalChangeReq').classList.add('show');
 }
 
 function toggleChangeReqType() {
   const isChange = document.getElementById('changeReqChange').checked;
-  document.getElementById('changeReqNewDetailSection').style.display = isChange ? '' : 'none';
+  document.getElementById('changeReqFields').style.display = isChange ? '' : 'none';
 }
 
 function submitChangeReq() {
@@ -1914,20 +1967,37 @@ function submitChangeReq() {
   const app = (appIdx !== null && Array.isArray(val)) ? val[appIdx] : val;
   if (!app) return;
 
-  const reqType   = document.getElementById('changeReqCancel').checked ? 'cancel' : 'change';
-  const newDetail = document.getElementById('changeReqNewDetail').value.trim();
-  const reason    = document.getElementById('changeReqReason').value.trim();
-
-  if (reqType === 'change' && !newDetail) { showToast('変更後の内容を入力してください'); return; }
+  const reqType = document.getElementById('changeReqCancel').checked ? 'cancel' : 'change';
+  const reason  = document.getElementById('changeReqReason').value.trim();
   if (!reason) { showToast('理由を入力してください'); return; }
 
-  app.changeReq = { reqType, newDetail: reqType==='change'?newDetail:'', reason,
+  let newDate = '', newStartTime = '', newEndTime = '', newDetail = '';
+
+  if (reqType === 'change') {
+    newDate      = document.getElementById('changeReqDate').value;
+    newStartTime = document.getElementById('changeReqStartTime').value;
+    const endSel = document.getElementById('changeReqEndTime');
+    newEndTime   = endSel.style.display !== 'none' ? endSel.value : '';
+
+    // 変更内容の文字列を生成（管理者表示用）
+    const origDate  = (appType==='misc'&&app.date)?app.date:dateKey;
+    const origStart = app.startTime||'';
+    const origEnd   = app.endTime||'';
+    const parts = [];
+    if (newDate && newDate !== origDate)           parts.push(`日付：${origDate}→${newDate}`);
+    if (newStartTime && newStartTime !== origStart) parts.push(`開始：${origStart||'?'}→${newStartTime}`);
+    if (newEndTime   && newEndTime   !== origEnd)   parts.push(`終了：${origEnd||'?'}→${newEndTime}`);
+    if (parts.length === 0) { showToast('変更内容がありません。日付または時間を変更してください'); return; }
+    newDetail = parts.join('　');
+  }
+
+  app.changeReq = { reqType, newDate, newStartTime, newEndTime, newDetail, reason,
     status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
 
   saveData(); renderAll(); hideModal('modalChangeReq');
 
-  const typeLabel = APP_TYPES.find(t=>t.key===appType)?.label || appType;
-  const crLabel   = reqType==='cancel' ? 'キャンセル申請' : '変更申請';
+  const typeLabel   = APP_TYPES.find(t=>t.key===appType)?.label || appType;
+  const crLabel     = reqType==='cancel' ? 'キャンセル申請' : '変更申請';
   const notifDetail = reqType==='cancel' ? `${typeLabel}のキャンセル希望` : `${typeLabel}の変更希望：${newDetail}`;
   notifyAdminsViaGAS(appType, notifDetail, dateKey);
   showToast(`📝 ${typeLabel}の${crLabel}を送信しました`);
@@ -3737,7 +3807,7 @@ function renderApprovalList() {
         </div>
         <div style="background:white;border-radius:8px;padding:8px 10px;margin:6px 0 4px;font-size:13px;border:1px solid #FFE0A8;">
           <div style="font-size:11px;color:#FF9500;font-weight:700;margin-bottom:4px;">📋 変更内容</div>
-          <div>${cr.reqType==='cancel'?'<strong>キャンセル希望</strong>':`変更後：<strong>${cr.newDetail}</strong>`}</div>
+          <div>${cr.reqType==='cancel'?'<strong>キャンセル希望</strong>':`<strong>${cr.newDetail}</strong>`}</div>
         </div>
         <div class="approval-reason">📝 ${cr.reason||'（理由なし）'}</div>
         ${cr.approvedBy?`<div style="margin-top:4px;font-size:12px;color:var(--subtext);">（${cr.approvedBy}が${cr.status==='approved'?'承認':'却下'}）</div>`:''}

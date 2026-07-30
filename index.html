@@ -2131,10 +2131,10 @@ function buildTimeSel15WithKeep(selId, setValue) {
   const sep = document.createElement('option');
   sep.disabled = true; sep.textContent = '──────────';
   sel.appendChild(sep);
-  // 時刻の選択肢
-  for (let h = 6; h <= 22; h++) {
+  // 時刻の選択肢（6:00〜24:00）
+  for (let h = 6; h <= 24; h++) {
     for (const m of [0, 15, 30, 45]) {
-      if (h === 22 && m > 0) continue;
+      if (h === 24 && m > 0) continue; // 24:00のみ
       const label = String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
       const opt = document.createElement('option');
       opt.value = label; opt.textContent = label;

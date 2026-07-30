@@ -2117,7 +2117,8 @@ function confirmReject() {
 // selId     : select要素のid
 // 「変更なし」付き時刻セレクト（修正依頼用）
 // setValue が null または '' のとき「変更なし」を選択状態にする
-function buildTimeSel15WithKeep(selId, setValue) {
+function buildTimeSel15WithKeep(selId, setValue, maxHour) {
+  maxHour = maxHour || 24;
   const sel = document.getElementById(selId);
   if (!sel) return;
   sel.innerHTML = '';
@@ -2131,10 +2132,10 @@ function buildTimeSel15WithKeep(selId, setValue) {
   const sep = document.createElement('option');
   sep.disabled = true; sep.textContent = '──────────';
   sel.appendChild(sep);
-  // 時刻の選択肢（6:00〜24:00）
-  for (let h = 6; h <= 24; h++) {
+  // 時刻の選択肢（6:00〜maxHour:00）
+  for (let h = 6; h <= maxHour; h++) {
     for (const m of [0, 15, 30, 45]) {
-      if (h === 24 && m > 0) continue; // 24:00のみ
+      if (h === maxHour && m > 0) continue; // 最大時刻は:00のみ
       const label = String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
       const opt = document.createElement('option');
       opt.value = label; opt.textContent = label;
@@ -2411,8 +2412,8 @@ function loadCorrReqCurrentRecord() {
   if (!date || !currentUser) {
     currentInEl.textContent  = '--:--';
     currentOutEl.textContent = '--:--';
-    buildTimeSel15WithKeep('corrClockIn',  '');
-    buildTimeSel15WithKeep('corrClockOut', '');
+    buildTimeSel15WithKeep('corrClockIn',  '', 26);
+    buildTimeSel15WithKeep('corrClockOut', '', 26);
     return;
   }
   const rec   = getRecByKey(currentUser, date);
@@ -2426,8 +2427,8 @@ function loadCorrReqCurrentRecord() {
   currentOutEl.textContent = lastOut  || '（記録なし）';
 
   // 現在の時刻を初期値にセット（記録があればその時刻、なければ「変更なし」）
-  buildTimeSel15WithKeep('corrClockIn',  firstIn  || '');
-  buildTimeSel15WithKeep('corrClockOut', lastOut  || '');
+  buildTimeSel15WithKeep('corrClockIn',  firstIn  || '', 26);
+  buildTimeSel15WithKeep('corrClockOut', lastOut  || '', 26);
   // 申請時間変更セクションも更新
   loadCorrAppCurrentRecord();
 }

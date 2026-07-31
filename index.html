@@ -3724,10 +3724,8 @@ function renderApprovalList() {
     });
   });
 
-  // 日付の新しい順（同日は申請日時の新しい順）
+  // 申請した日時の新しい順（修正依頼・変更申請は申請日優先、通常申請は申請日時順）
   allItems.sort((a,b)=>{
-    const dk = b.dateKey.localeCompare(a.dateKey);
-    if(dk!==0) return dk;
     const ta = a.kind==='app' ? (a.app.appliedAt||0) : a.kind==='changeReq' ? (a.cr.appliedAt||0) : (a.req.appliedAt||0);
     const tb = b.kind==='app' ? (b.app.appliedAt||0) : b.kind==='changeReq' ? (b.cr.appliedAt||0) : (b.req.appliedAt||0);
     return tb-ta;

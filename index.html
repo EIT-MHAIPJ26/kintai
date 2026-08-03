@@ -1860,6 +1860,19 @@ function cancelApp(type, idx) {
   showToast('🗑️ '+typeName+'を取り消しました');
 }
 
+// 申請状況タブからの修正依頼取り消し
+function cancelCorrReqByDate(dateKey, idx) {
+  if (!currentUser) return;
+  const rec = getRecByKey(currentUser, dateKey);
+  if (!Array.isArray(rec.corrReq) || !rec.corrReq[idx]) { showToast('取り消しできる修正依頼がありません'); return; }
+  if (rec.corrReq[idx].status !== 'pending') { showToast('すでに対応済みのため取り消しできません'); return; }
+  if (!confirm('この修正依頼を取り消しますか？')) return;
+  rec.corrReq.splice(idx, 1);
+  saveData(); renderAll();
+  syncRecordToGAS(currentUser, dateKey);
+  showToast('🗑️ 修正依頼を取り消しました');
+}
+
 // 申請状況タブからの取り消し（日付指定・全タイプ対応）
 function cancelAppByDate(type, dateKey, idx) {
   if (!currentUser) return;
@@ -3530,6 +3543,9 @@ function renderMyApplications() {
       const stLabel = req.status === 'done' ? '対応済み' : '未対応';
       const stCls   = req.status === 'done' ? 'approved' : 'pending';
       const doneTxt = req.doneBy ? `<span class="myapp-approver">（${req.doneBy}が対応）</span>` : '';
+      const cancelCorrBtn = req.status === 'pending'
+        ? `<button onclick="cancelCorrReqByDate('${dateKey}',${entry.idx})" style="margin-left:8px;font-size:11px;padding:3px 9px;border:1px solid var(--danger);border-radius:6px;background:transparent;color:var(--danger);cursor:pointer;">取り消し</button>`
+        : '';
       item.innerHTML = `
         <div class="myapp-header">
           <span class="myapp-type" style="color:var(--purple)">${typeLabel}</span>
@@ -3539,7 +3555,7 @@ function renderMyApplications() {
         ${req.reason ? `<div class="myapp-reason">📝 ${req.reason}</div>` : ''}
         <div>
           <span class="myapp-status ${stCls}">${stIcon} ${stLabel}</span>
-          ${doneTxt}
+          ${doneTxt}${cancelCorrBtn}
         </div>`;
 
     } else {

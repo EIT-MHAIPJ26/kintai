@@ -1683,8 +1683,8 @@ function approveApplication(userName, dateKey, type, idx) {
 function buildOtTimes() {
   const sel = document.getElementById('otTime');
   sel.innerHTML = '';
-  for (let h=17; h<=24; h++) {
-    const mins = h===17?[30,45]:h===24?[0]:[0,15,30,45];
+  for (let h=15; h<=24; h++) {
+    const mins = h===15?[15,30,45]:h===24?[0]:[0,15,30,45];
     mins.forEach(m => {
       const opt = document.createElement('option');
       const label = String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');
@@ -1734,8 +1734,8 @@ function showOtReapplyModal(dateKey) {
   // 時間帯を全範囲（17:30〜24:00）で再生成し、現在値を選択
   const sel = document.getElementById('otTime');
   sel.innerHTML = '';
-  for (let h = 17; h <= 24; h++) {
-    const mins = h === 17 ? [30,45] : h === 24 ? [0] : [0,15,30,45];
+  for (let h = 15; h <= 24; h++) {
+    const mins = h === 15 ? [15,30,45] : h === 24 ? [0] : [0,15,30,45];
     mins.forEach(m => {
       const opt = document.createElement('option');
       const label = String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');
@@ -2286,6 +2286,7 @@ function submitPaid() {
   const reason    = document.getElementById('paidReason').value.trim();
   if (!date)    { showToast('対象日を選択してください'); return; }
   if (!endTime) { showToast('終了時刻を選択してください'); return; }
+  if (!reason)  { showToast('理由を入力してください'); return; }
   const rec = getRecByKey(currentUser, date);
   if (!Array.isArray(rec.paid)) rec.paid = rec.paid ? [rec.paid] : [];
   const dup = rec.paid.find(p => p.status !== 'rejected' && p.startTime === startTime && p.endTime === endTime);

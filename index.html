@@ -718,6 +718,7 @@
       <option value="早退">早退</option>
       <option value="特別休暇">特別休暇</option>
       <option value="欠勤">欠勤</option>
+      <option value="その他">その他</option>
     </select>
     <!-- 通常の日付・時間グループ -->
     <div id="miscDateGroup">
@@ -756,12 +757,14 @@
     </div>
     <label>理由・内容</label>
     <textarea id="miscReason" placeholder="理由・内容を入力してください"></textarea>
-    <label>🍱 昼休憩</label>
-    <select id="miscLunchTaken" style="border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;background:var(--card);color:var(--text);width:100%;">
-      <option value="">選択しない</option>
-      <option value="yes">あり（昼休憩を取った）</option>
-      <option value="no">なし（昼休憩を取らなかった）</option>
-    </select>
+    <div id="miscLunchGroup" style="display:none;">
+      <label>🍱 昼休憩</label>
+      <select id="miscLunchTaken" style="border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;background:var(--card);color:var(--text);width:100%;">
+        <option value="">選択しない</option>
+        <option value="yes">あり（昼休憩を取った）</option>
+        <option value="no">なし（昼休憩を取らなかった）</option>
+      </select>
+    </div>
     <div class="modal-buttons">
       <button class="btn-cancel" onclick="hideModal('modalMisc')">キャンセル</button>
       <button class="btn-confirm" style="background:linear-gradient(135deg,#32ADE6,#5AC8FA)" onclick="submitMisc()">申請する</button>
@@ -2762,6 +2765,10 @@ function updateMiscFields() {
   const endDate    = document.getElementById('miscEndDate');
   const sep        = document.getElementById('miscDateRangeSep');
   const compGroup  = document.getElementById('miscCompGroup');
+  const lunchGroup = document.getElementById('miscLunchGroup');
+
+  // 昼休憩はその他のみ表示
+  lunchGroup.style.display = subType === 'その他' ? '' : 'none';
 
   if (subType === '特別休暇') {
     dateGroup.style.display  = '';
@@ -2783,7 +2790,7 @@ function updateMiscFields() {
       timeLabel.textContent  = '時間（※早退対象となる時間）';
       compGroup.style.display = '';
     } else {
-      timeLabel.textContent  = '時間（任意）';
+      timeLabel.textContent  = subType === 'その他' ? '時間（任意）' : '時間（任意）';
       compGroup.style.display = 'none';
     }
   }
@@ -2810,7 +2817,7 @@ function submitMisc() {
     if (wantComp && !compDate) { showToast('振替希望日を選択してください'); return; }
   }
 
-  const lunchVal    = document.getElementById('miscLunchTaken').value;
+  const lunchVal    = subType === 'その他' ? document.getElementById('miscLunchTaken').value : '';
   const lunchTaken  = lunchVal === 'yes' ? true : lunchVal === 'no' ? false : null;
 
   const rec = getRecByKey(currentUser, date);

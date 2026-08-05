@@ -111,6 +111,7 @@
     .ot-status-bar.paid{background:#FFF3E0;color:#B55B00;border-color:#FFCC80;}
     .ot-status-bar.holiday-work{background:#FFF0F0;color:var(--danger);border-color:#FFB3B3;}
     .ot-status-bar.misc { background: linear-gradient(135deg,#32ADE6,#5AC8FA); color:#fff; }
+    .ot-status-bar.lunch { background:#FFF3E0; color:#B55B00; border-color:#FFCC80; }
     /* ラジオボタン */
     .radio-group{display:flex;gap:20px;padding:8px 0;}
     .radio-group label{display:flex;align-items:center;gap:6px;font-size:14px;cursor:pointer;}
@@ -407,6 +408,7 @@
     <div id="paidStatusBar" style="display:none"></div>
     <div id="holidayStatusBar" style="display:none"></div>
     <div id="miscStatusBar" style="display:none"></div>
+    <div id="lunchStatusBar" style="display:none"></div>
     <!-- 今日以降の申請一覧 -->
     <div id="upcomingApps" style="display:none;margin-top:10px;border-top:1px solid var(--border);padding-top:10px;"></div>
     <!-- 管理者：修正ボタン（統合） -->
@@ -445,6 +447,10 @@
     <button class="btn-apply btn-corr-req" id="btnCorrReq" onclick="showCorrReqModal()">
       <span style="font-size:28px">🔧</span>
       修正依頼
+    </button>
+    <button class="btn-apply" id="btnLunch" style="background:linear-gradient(135deg,#FF9500,#FFCC00);color:#fff;" onclick="showLunchModal()">
+      <span style="font-size:28px">🍱</span>
+      <span id="btnLunchText">昼休憩申請</span>
     </button>
   </div>
 
@@ -975,6 +981,25 @@
   </div>
 </div>
 
+
+<!-- 昼休憩申請モーダル -->
+<div class="modal-overlay" id="modalLunchBreak" onclick="closeModalBg(event,'modalLunchBreak')">
+  <div class="modal">
+    <h3>🍱 昼休憩申請</h3>
+    <label>昼休憩の取得状況</label>
+    <div class="radio-group" style="margin-bottom:12px;">
+      <label><input type="radio" name="lunchTaken" id="lunchTakenYes" value="yes" checked> ✅ 昼休憩を取りました</label>
+      <label><input type="radio" name="lunchTaken" id="lunchTakenNo"  value="no"> ❌ 昼休憩を取りませんでした</label>
+    </div>
+    <label>理由（必須）</label>
+    <textarea id="lunchBreakReason" placeholder="理由を入力してください"></textarea>
+    <div class="modal-buttons">
+      <button class="btn-cancel" onclick="hideModal('modalLunchBreak')">キャンセル</button>
+      <button class="btn-confirm" style="background:linear-gradient(135deg,#FF9500,#FFCC00);color:#fff;" onclick="submitLunchBreak()">申請する</button>
+    </div>
+  </div>
+</div>
+
 <!-- 出勤リマインダーバナー -->
 <div class="checkin-banner" id="checkinBanner" style="display:none">
   <span class="rb-icon">🌅</span>
@@ -1078,7 +1103,7 @@ function syncRecordToGAS(name, dateKey, notifyInfo) {
   if (!gasUrl) return;
   const rec = getRecByKey(name, dateKey);
   updateSyncIndicator('syncing');
-  const body = { action:'upsertRecord', name, date:dateKey, pairs:rec.pairs||[], ot:rec.ot||null, early:rec.early||null, paid:rec.paid||null, holiday:rec.holiday||null, misc:rec.misc||null, corrReq:rec.corrReq||[], updatedAt:rec.updatedAt||0 };
+  const body = { action:'upsertRecord', name, date:dateKey, pairs:rec.pairs||[], ot:rec.ot||null, early:rec.early||null, paid:rec.paid||null, holiday:rec.holiday||null, misc:rec.misc||null, corrReq:rec.corrReq||[], lunchBreak:rec.lunchBreak||null, updatedAt:rec.updatedAt||0 };
   if (notifyInfo) body.notifyInfo = notifyInfo;
   fetch(gasUrl, {
     method: 'POST',
@@ -1180,7 +1205,7 @@ function notifyAdminsViaGAS(type, detail, date) {
   const dateKey = date || todayKey();
   const rec = getRecByKey(currentUser, dateKey);
   updateSyncIndicator('syncing');
-  const body = { action:'upsertRecord', name:currentUser, date:dateKey, pairs:rec.pairs||[], ot:rec.ot||null, early:rec.early||null, paid:rec.paid||null, holiday:rec.holiday||null, misc:rec.misc||null, corrReq:rec.corrReq||[], updatedAt:rec.updatedAt||0, notifyInfo };
+  const body = { action:'upsertRecord', name:currentUser, date:dateKey, pairs:rec.pairs||[], ot:rec.ot||null, early:rec.early||null, paid:rec.paid||null, holiday:rec.holiday||null, misc:rec.misc||null, corrReq:rec.corrReq||[], lunchBreak:rec.lunchBreak||null, updatedAt:rec.updatedAt||0, notifyInfo };
   fetch(gasUrl, { method:'POST', mode:'no-cors', body: JSON.stringify(body) })
     .then(() => updateSyncIndicator('ok'))
     .catch(() => {});
@@ -3082,6 +3107,122 @@ function renderHeaderRole() {
   editArea.style.display = admin ? 'flex' : 'none';
 }
 
+
+// ============================================================
+//  昼休憩申請
+// ============================================================
+
+// 昼休憩時間帯（12:15〜13:15）をまたぐか判定
+function overlapsLunch_(startTime, endTime) {
+  if (!startTime || !endTime) return false;
+  const toMin = s => { const [h,m] = s.split(':').map(Number); return h*60+m; };
+  const s = toMin(startTime);
+  const e = toMin(endTime);
+  const lunchS = 12*60+15; // 12:15
+  const lunchE = 13*60+15; // 13:15
+  return s <= lunchS && e >= lunchE;
+}
+
+// 昼休憩申請モーダルを表示
+function showLunchModal() {
+  if (!currentUser) { showToast('先にログインしてください'); return; }
+  const rec = getTodayRec();
+  const lb = rec.lunchBreak;
+  if (lb && (lb.status === 'pending' || lb.status === 'approved')) {
+    showToast('昼休憩申請はすでに' + (lb.status === 'pending' ? '申請中' : '承認済み') + 'です');
+    return;
+  }
+  // ラジオをリセット
+  document.getElementById('lunchTakenYes').checked = true;
+  document.getElementById('lunchTakenNo').checked = false;
+  document.getElementById('lunchBreakReason').value = '';
+  document.getElementById('modalLunchBreak').classList.add('show');
+}
+
+// 昼休憩申請を送信
+function submitLunchBreak() {
+  const taken = document.getElementById('lunchTakenYes').checked ? true : false;
+  const reason = document.getElementById('lunchBreakReason').value.trim();
+  if (!reason) { showToast('理由を入力してください'); return; }
+  const dateKey = todayKey();
+  const rec = getTodayRec();
+  rec.lunchBreak = {
+    taken: taken,
+    status: 'pending',
+    reason: reason,
+    appliedAt: Date.now(),
+    approvedBy: null,
+    approvedAt: null,
+    comment: ''
+  };
+  saveData();
+  hideModal('modalLunchBreak');
+  syncRecordToGAS(currentUser, dateKey, {
+    name: currentUser,
+    typeName: '昼休憩申請',
+    detail: (taken ? '昼休憩あり' : '昼休憩なし') + '　理由：' + reason,
+    date: dateKey
+  });
+  renderStatus();
+  renderMyApplications();
+  showToast('🍱 昼休憩申請を送信しました');
+}
+
+// 昼休憩申請を取り消す（pending のみ）
+function cancelLunchBreak(dateKey) {
+  const rec = getRecByKey(currentUser, dateKey);
+  if (!rec.lunchBreak || rec.lunchBreak.status !== 'pending') { showToast('取り消せる申請がありません'); return; }
+  delete rec.lunchBreak;
+  saveData();
+  syncRecordToGAS(currentUser, dateKey);
+  renderStatus();
+  renderMyApplications();
+  showToast('🍱 昼休憩申請を取り消しました');
+}
+
+// 昼休憩申請を承認（管理者用）
+function approveLunchBreak(name, dateKey) {
+  const rec = getRecByKey(name, dateKey);
+  if (!rec.lunchBreak) return;
+  rec.lunchBreak.status = 'approved';
+  rec.lunchBreak.approvedBy = currentUser;
+  rec.lunchBreak.approvedAt = Date.now();
+  saveData();
+  syncRecordToGAS(name, dateKey);
+  renderApprovalList();
+  renderApprovalTab();
+  showToast('✅ ' + name + 'さんの昼休憩申請を承認しました');
+}
+
+// 昼休憩申請の却下モーダル（prompt で簡易実装）
+function showLunchRejectModal(name, dateKey) {
+  const comment = prompt('却下理由を入力してください（省略可）') || '';
+  rejectLunchBreak(name, dateKey, comment);
+}
+
+// 昼休憩申請を却下（管理者用）
+function rejectLunchBreak(name, dateKey, comment) {
+  const rec = getRecByKey(name, dateKey);
+  if (!rec.lunchBreak) return;
+  rec.lunchBreak.status = 'rejected';
+  rec.lunchBreak.comment = comment || '';
+  saveData();
+  syncRecordToGAS(name, dateKey);
+  renderApprovalList();
+  renderApprovalTab();
+  showToast('🚫 ' + name + 'さんの昼休憩申請を却下しました');
+}
+
+// 休日出勤の昼休憩トグル（承認不要）
+function toggleHolidayLunch(dateKey, idx, value) {
+  const rec = getRecByKey(currentUser, dateKey);
+  if (!rec?.holiday?.[idx]) return;
+  rec.holiday[idx].lunchTaken = value;
+  saveData();
+  syncRecordToGAS(currentUser, dateKey);
+  renderMyApplications();
+}
+
 function renderStatus() {
   const now = new Date();
   document.getElementById('todayDate').textContent =
@@ -3089,7 +3230,7 @@ function renderStatus() {
 
   // 申請ボタン・ステータスバーの初期化ヘルパー
   function hideAllAppBars() {
-    ['otStatusBar','otExtStatusBar','earlyStatusBar','paidStatusBar','holidayStatusBar','miscStatusBar'].forEach(id=>{
+    ['otStatusBar','otExtStatusBar','earlyStatusBar','paidStatusBar','holidayStatusBar','miscStatusBar','lunchStatusBar'].forEach(id=>{
       document.getElementById(id).style.display='none';
     });
   }
@@ -3158,6 +3299,33 @@ function renderStatus() {
 
   // 残業予定
   document.getElementById('otPlanned').textContent = rec.ot ? rec.ot.plannedEnd : '--:--';
+
+  // 昼休憩申請ボタン
+  const lb = rec.lunchBreak;
+  const btnLunch = document.getElementById('btnLunch');
+  const lunchBar = document.getElementById('lunchStatusBar');
+  if (btnLunch) {
+    btnLunch.disabled = !hasPairs || (lb && (lb.status === 'pending' || lb.status === 'approved'));
+    document.getElementById('btnLunchText').textContent =
+      lb?.status === 'pending' ? '申請中…' :
+      lb?.status === 'approved' ? (lb.taken ? '昼休憩あり ✅' : '昼休憩なし ✅') :
+      '昼休憩申請';
+  }
+  if (lunchBar) {
+    if (lb?.status) {
+      const lbMap = {
+        pending: '⏳ 昼休憩申請 承認待ち',
+        approved: lb.taken ? '✅ 昼休憩あり 承認済み' : '✅ 昼休憩なし 承認済み',
+        rejected: '🚫 昼休憩申請 却下'
+      };
+      lunchBar.className = 'ot-status-bar lunch' + (lb.status === 'rejected' ? ' rejected' : '');
+      lunchBar.textContent = lbMap[lb.status] || '';
+      lunchBar.style.display = '';
+    } else {
+      lunchBar.style.display = 'none';
+    }
+  }
+
 
   // 打刻ペア一覧
   const pl = document.getElementById('pairsList');
@@ -3492,22 +3660,33 @@ function renderMyApplications() {
         items.push({ kind:'corr', dateKey, dateStr, req, idx });
       });
     }
+
+    // 昼休憩申請
+    if (rec.lunchBreak) {
+      const lb = rec.lunchBreak;
+      if (inMonth || lb.status === 'pending') {
+        items.push({ kind:'lunch', dateKey, dateStr, lb });
+      }
+    }
   });
 
   // 未対応を先に、申請日時の新しい順
   items.sort((a, b) => {
-    const aPending = a.kind==='app' ? a.app.status==='pending' : a.req.status==='pending';
-    const bPending = b.kind==='app' ? b.app.status==='pending' : b.req.status==='pending';
+    const getStatus = i => i.kind==='app' ? i.app.status : i.kind==='lunch' ? i.lb.status : i.req.status;
+    const aPending = getStatus(a) === 'pending';
+    const bPending = getStatus(b) === 'pending';
     if (aPending !== bPending) return aPending ? -1 : 1;
-    const ta = a.kind==='app' ? (a.app.appliedAt||0) : (a.req.appliedAt||0);
-    const tb = b.kind==='app' ? (b.app.appliedAt||0) : (b.req.appliedAt||0);
+    const ta = a.kind==='app' ? (a.app.appliedAt||0) : a.kind==='lunch' ? (a.lb.appliedAt||0) : (a.req.appliedAt||0);
+    const tb = b.kind==='app' ? (b.app.appliedAt||0) : b.kind==='lunch' ? (b.lb.appliedAt||0) : (b.req.appliedAt||0);
     return tb - ta;
   });
 
   // バッジ（承認待ち・未対応件数）
-  const pendingCount = items.filter(i =>
-    i.kind==='app' ? i.app.status==='pending' : i.req.status==='pending'
-  ).length;
+  const pendingCount = items.filter(i => {
+    if (i.kind==='app')   return i.app.status==='pending';
+    if (i.kind==='lunch') return i.lb.status==='pending';
+    return i.req.status==='pending';
+  }).length;
   const badge = document.getElementById('myappsBadge');
   badge.textContent = pendingCount;
   badge.style.display = pendingCount > 0 ? '' : 'none';
@@ -3559,6 +3738,33 @@ function renderMyApplications() {
           ${doneTxt}${cancelCorrBtn}
         </div>`;
 
+    } else if (entry.kind === 'lunch') {
+      // 昼休憩申請
+      const lb = entry.lb;
+      const stIcon = { pending:'⏳', approved:'✅', rejected:'🚫' }[lb.status];
+      const stLabel = { pending:'承認待ち', approved:'承認済み', rejected:'却下' }[lb.status];
+      const takenLabel = lb.taken ? '昼休憩あり' : '昼休憩なし';
+      const cancelBtn = lb.status === 'pending'
+        ? `<button onclick="cancelLunchBreak('${entry.dateKey}')" style="margin-left:8px;font-size:11px;padding:3px 9px;border:1px solid var(--danger);border-radius:6px;background:transparent;color:var(--danger);cursor:pointer;">取り消し</button>`
+        : '';
+      const commentTxt = lb.status === 'rejected' && lb.comment
+        ? `<div class="myapp-reason">💬 ${lb.comment}</div>` : '';
+      const approverTxt = lb.approvedBy ? `<span class="myapp-approver">（${lb.approvedBy}）</span>` : '';
+      item.innerHTML = `
+        <div class="myapp-header">
+          <span class="myapp-type" style="color:#B55B00">🍱 昼休憩申請</span>
+          <span class="myapp-date">${entry.dateStr}</span>
+        </div>
+        <div class="myapp-detail">${takenLabel}</div>
+        ${lb.reason ? `<div class="myapp-reason">📝 ${lb.reason}</div>` : ''}
+        ${commentTxt}
+        <div>
+          <span class="myapp-status ${lb.status}">${stIcon} ${stLabel}</span>
+          ${approverTxt}${cancelBtn}
+        </div>`;
+      list.appendChild(item);
+      return;
+
     } else {
       // 通常申請
       const { dateKey, dateStr, typeInfo, app, detail, appIdx } = entry;
@@ -3589,6 +3795,19 @@ function renderMyApplications() {
       }
       const changeReqRejectTxt = (app.changeReq?.status === 'rejected' && app.changeReq?.comment)
         ? `<div style="font-size:12px;color:var(--danger);margin-top:3px;">💬 変更却下：${app.changeReq.comment}</div>` : '';
+      // 休日出勤承認済み + 昼またぎ の場合は昼休憩トグルを追加
+      let lunchToggleHtml = '';
+      if (typeInfo.key === 'holiday' && app.status === 'approved' && overlapsLunch_(app.startTime, app.endTime)) {
+        const lt = app.lunchTaken;
+        const noneActive = lt === false;
+        const haveActive = lt !== false;
+        lunchToggleHtml = `
+  <div style="margin-top:8px;font-size:12px;color:var(--subtext);">
+    🍱 昼休憩：
+    <button onclick="toggleHolidayLunch('${dateKey}',${appIdx},false)" style="padding:3px 10px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;margin-left:4px;background:${noneActive?'#E8F9EF':'#F2F2F7'};color:${noneActive?'#05A847':'var(--subtext)'};border:1px solid ${noneActive?'#A8E6C0':'#E5E5EA'}">なし</button>
+    <button style="padding:3px 10px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;margin-left:4px;background:${haveActive&&lt!==false?'#E8F9EF':'#F2F2F7'};color:${haveActive&&lt!==false?'#05A847':'var(--subtext)'};border:1px solid ${haveActive&&lt!==false?'#A8E6C0':'#E5E5EA'}" onclick="toggleHolidayLunch('${dateKey}',${appIdx},true)">あり</button>
+  </div>`;
+      }
       item.innerHTML = `
         <div class="myapp-header">
           <span class="myapp-type" style="color:${typeInfo.color}">${typeInfo.icon} ${typeInfo.label}</span>
@@ -3602,7 +3821,8 @@ function renderMyApplications() {
           <span class="myapp-status ${app.status}">${stIcons[app.status]} ${stLabels[app.status]}</span>
           ${approverTxt}
           ${cancelBtn}${reapplyBtn}${changeReqHtml}
-        </div>`;
+        </div>
+        ${lunchToggleHtml}`;
     }
     list.appendChild(item);
   });
@@ -3729,6 +3949,8 @@ function renderApprovalTab() {
         const apps=Array.isArray(val)?val:(val?[val]:[]);
         apps.forEach(a=>{ if(a?.changeReq?.status==='pending') count++; });
       });
+      // 昼休憩申請も集計
+      if(rec.lunchBreak?.status==='pending') count++;
     });
   });
   const badge=document.getElementById('approvalBadge');
@@ -3780,14 +4002,17 @@ function renderApprovalList() {
           allItems.push({kind:'changeReq',name,dateKey,rec,appType:t.key,typeInfo:t,app,appIdx:Array.isArray(val)?idx:null,cr});
         });
       });
+      // 昼休憩申請
+      if(rec.lunchBreak?.status && (inMonth || rec.lunchBreak.status==='pending')){
+        allItems.push({kind:'lunch',name,dateKey,rec,lb:rec.lunchBreak});
+      }
     });
   });
 
   // 申請した日時の新しい順（修正依頼・変更申請は申請日優先、通常申請は申請日時順）
   allItems.sort((a,b)=>{
-    const ta = a.kind==='app' ? (a.app.appliedAt||0) : a.kind==='changeReq' ? (a.cr.appliedAt||0) : (a.req.appliedAt||0);
-    const tb = b.kind==='app' ? (b.app.appliedAt||0) : b.kind==='changeReq' ? (b.cr.appliedAt||0) : (b.req.appliedAt||0);
-    return tb-ta;
+    const getAt = i => i.kind==='app' ? (i.app.appliedAt||0) : i.kind==='changeReq' ? (i.cr.appliedAt||0) : i.kind==='lunch' ? (i.lb.appliedAt||0) : (i.req.appliedAt||0);
+    return getAt(b)-getAt(a);
   });
 
   if(allItems.length===0){list.innerHTML='<div class="empty-state">📭 申請はありません</div>';return;}
@@ -3874,6 +4099,37 @@ function renderApprovalList() {
           <button class="btn-approve" onclick="approveChangeReq('${name}','${dateKey}','${appType}'${appIdxArg})">✅ 承認${cr.reqType==='cancel'?'（申請を削除）':''}</button>
           <button class="btn-reject" onclick="showChangeReqRejectModal('${name}','${dateKey}','${appType}'${appIdxArg})">🚫 却下</button>
         </div>`:''}`;
+      list.appendChild(item);
+
+    } else if(kind==='lunch'){
+      // 昼休憩申請（管理者用）
+      const {lb}=entry;
+      const d2=new Date(dateKey.replace(/-/g,'/'));
+      const dateStr2=(d2.getMonth()+1)+'/'+d2.getDate()+'（'+WEEKDAYS[d2.getDay()]+'）';
+      const takenLabel = lb.taken ? '昼休憩あり' : '昼休憩なし';
+      const isSelf = name === currentUser;
+      let lunchActionHtml = '';
+      if(lb.status==='approved'){
+        lunchActionHtml=`<div class="approval-buttons"><button style="padding:8px 18px;border-radius:10px;border:none;font-weight:700;font-size:13px;cursor:pointer;background:#F2F2F7;color:var(--danger);" onclick="(()=>{const r=getRecByKey('${name}','${dateKey}');delete r.lunchBreak;saveData();syncRecordToGAS('${name}','${dateKey}');renderApprovalList();renderApprovalTab();showToast('削除しました');})()">🗑️ 承認取り消し・削除</button></div>`;
+      } else if(lb.status==='rejected'){
+        lunchActionHtml=`<div class="approval-buttons"><button style="padding:6px 14px;border-radius:8px;border:1px solid var(--danger);font-size:12px;font-weight:700;cursor:pointer;background:transparent;color:var(--danger);" onclick="(()=>{const r=getRecByKey('${name}','${dateKey}');delete r.lunchBreak;saveData();syncRecordToGAS('${name}','${dateKey}');renderApprovalList();renderApprovalTab();showToast('削除しました');})()">🗑️ 削除</button></div>`;
+      } else if(isSelf){
+        lunchActionHtml=`<div class="approval-done" style="background:#F2F2F7;color:var(--subtext);">⏳ 他の管理者の承認待ちです</div>`;
+      } else {
+        lunchActionHtml=`<div class="approval-buttons"><button class="btn-approve" onclick="approveLunchBreak('${name}','${dateKey}')">✅ 承認</button><button class="btn-reject" onclick="showLunchRejectModal('${name}','${dateKey}')">🚫 却下</button></div>`;
+      }
+      const approverTxt=lb.approvedBy?`<span style="font-size:11px;color:var(--subtext);">（${lb.approvedBy}）</span>`:'';
+      const item=document.createElement('div');
+      item.className='approval-item';
+      item.innerHTML=`
+        <div class="approval-header">
+          <span class="approval-name">👤 ${name}</span>
+          <span class="approval-date">${dateStr2} <span style="font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px;background:#FFF3E0;color:#B55B00;">🍱 昼休憩申請</span> ${statusBadge[lb.status]||''}</span>
+        </div>
+        <div class="approval-detail">${takenLabel} ${approverTxt}</div>
+        <div class="approval-reason">📝 ${lb.reason||'（理由なし）'}</div>
+        ${lb.status==='rejected'&&lb.comment?`<div class="approval-reason" style="color:var(--danger);">💬 ${lb.comment}</div>`:''}
+        ${lunchActionHtml}`;
       list.appendChild(item);
 
     } else {

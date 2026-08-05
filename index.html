@@ -408,7 +408,6 @@
     <div id="paidStatusBar" style="display:none"></div>
     <div id="holidayStatusBar" style="display:none"></div>
     <div id="miscStatusBar" style="display:none"></div>
-    <div id="lunchStatusBar" style="display:none"></div>
     <!-- 今日以降の申請一覧 -->
     <div id="upcomingApps" style="display:none;margin-top:10px;border-top:1px solid var(--border);padding-top:10px;"></div>
     <!-- 管理者：修正ボタン（統合） -->
@@ -447,10 +446,6 @@
     <button class="btn-apply btn-corr-req" id="btnCorrReq" onclick="showCorrReqModal()">
       <span style="font-size:28px">🔧</span>
       修正依頼
-    </button>
-    <button class="btn-apply" id="btnLunch" style="background:linear-gradient(135deg,#FF9500,#FFCC00);color:#fff;" onclick="showLunchModal()">
-      <span style="font-size:28px">🍱</span>
-      <span id="btnLunchText">昼休憩申請</span>
     </button>
   </div>
 
@@ -672,9 +667,9 @@
     <input type="date" id="holidayWorkDate"/>
     <label>勤務時間</label>
     <div style="display:flex;align-items:center;gap:8px;">
-      <select id="holidayStartTime" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;background:var(--card);color:var(--text);"></select>
+      <select id="holidayStartTime" onchange="updateHolidayLunchSection()" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;background:var(--card);color:var(--text);"></select>
       <span style="color:var(--subtext);">〜</span>
-      <select id="holidayEndTime" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;background:var(--card);color:var(--text);"></select>
+      <select id="holidayEndTime" onchange="updateHolidayLunchSection()" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;background:var(--card);color:var(--text);"></select>
     </div>
     <label>理由</label>
     <textarea id="holidayReason" placeholder="休日出勤の理由を入力してください"></textarea>
@@ -696,6 +691,14 @@
         <select id="compTimeStart" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;background:var(--card);color:var(--text);"></select>
         <span style="color:var(--subtext);">〜</span>
         <select id="compTimeEnd" style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;background:var(--card);color:var(--text);"></select>
+      </div>
+    </div>
+    <!-- 昼休憩（勤務時間が12:15〜13:15をまたぐ場合のみ表示） -->
+    <div id="holidayLunchSection" style="display:none;">
+      <label>🍱 昼休憩</label>
+      <div class="radio-group">
+        <label><input type="radio" name="holidayLunch" id="holidayLunchYes" value="yes" checked> あり（昼休憩を取る）</label>
+        <label><input type="radio" name="holidayLunch" id="holidayLunchNo"  value="no"> なし（昼休憩を取らない）</label>
       </div>
     </div>
     <div class="modal-buttons">
@@ -753,6 +756,12 @@
     </div>
     <label>理由・内容</label>
     <textarea id="miscReason" placeholder="理由・内容を入力してください"></textarea>
+    <label>🍱 昼休憩</label>
+    <select id="miscLunchTaken" style="border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;background:var(--card);color:var(--text);width:100%;">
+      <option value="">選択しない</option>
+      <option value="yes">あり（昼休憩を取った）</option>
+      <option value="no">なし（昼休憩を取らなかった）</option>
+    </select>
     <div class="modal-buttons">
       <button class="btn-cancel" onclick="hideModal('modalMisc')">キャンセル</button>
       <button class="btn-confirm" style="background:linear-gradient(135deg,#32ADE6,#5AC8FA)" onclick="submitMisc()">申請する</button>
@@ -2325,6 +2334,14 @@ function submitPaid() {
 // ============================================================
 //  休日出勤申請
 // ============================================================
+// 休日出勤モーダルの昼休憩セクション表示切り替え
+function updateHolidayLunchSection() {
+  const start = document.getElementById('holidayStartTime').value;
+  const end   = document.getElementById('holidayEndTime').value;
+  const show  = start && end && overlapsLunch_(start, end);
+  document.getElementById('holidayLunchSection').style.display = show ? '' : 'none';
+}
+
 function toggleCompDate() {
   const want = document.getElementById('compYes').checked;
   document.getElementById('compDateSection').style.display = want ? '' : 'none';
@@ -2347,6 +2364,8 @@ function showHolidayModal() {
   document.getElementById('compNo').checked = true;
   document.getElementById('compDateSection').style.display = 'none';
   document.getElementById('compDate').value = '';
+  document.getElementById('holidayLunchYes').checked = true;
+  document.getElementById('holidayLunchSection').style.display = 'none';
   document.getElementById('modalHoliday').classList.add('show');
 }
 
@@ -2390,6 +2409,9 @@ function submitHoliday() {
   const compTimeStart = document.getElementById('compTimeStart').value;
   const compTimeEnd   = document.getElementById('compTimeEnd').value;
   const compTime      = compTimeStart ? compTimeStart+(compTimeEnd?'〜'+compTimeEnd:'') : '';
+  // 昼休憩（12:15〜13:15をまたぐ場合のみ取得）
+  const lunchVisible  = document.getElementById('holidayLunchSection').style.display !== 'none';
+  const lunchTaken    = lunchVisible ? document.getElementById('holidayLunchYes').checked : null;
   if (!workDate)  { showToast('出勤日を選択してください'); return; }
   if (!startTime || !endTime) { showToast('勤務時間を入力してください'); return; }
   if (startTime >= endTime)   { showToast('終了時刻は開始時刻より後にしてください'); return; }
@@ -2399,7 +2421,7 @@ function submitHoliday() {
   if (_holidayReapply) {
     const reapplyReason = document.getElementById('holidayReapplyReason').value.trim();
     if (!reapplyReason) { showToast('再申請理由を入力してください'); return; }
-    const newEntry = { workDate, startTime, endTime, wantComp, compDate: wantComp?compDate:'', compTime: wantComp?compTime:'', reason, reapplyReason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
+    const newEntry = { workDate, startTime, endTime, wantComp, compDate: wantComp?compDate:'', compTime: wantComp?compTime:'', reason, reapplyReason, lunchTaken, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
     // 再申請：既存エントリを新しい内容で上書き
     const ctx = _holidayReapply;
     _holidayReapply = null;
@@ -2411,7 +2433,7 @@ function submitHoliday() {
     showToast('🔄 休日出勤を再申請しました（'+startTime+'〜'+endTime+'）');
   } else {
     // 新規申請
-    const newEntry = { workDate, startTime, endTime, wantComp, compDate: wantComp?compDate:'', compTime: wantComp?compTime:'', reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
+    const newEntry = { workDate, startTime, endTime, wantComp, compDate: wantComp?compDate:'', compTime: wantComp?compTime:'', reason, lunchTaken, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
     const rec = getRecByKey(currentUser, workDate);
     if (!Array.isArray(rec.holiday)) rec.holiday = rec.holiday ? [rec.holiday] : [];
     const dup = rec.holiday.find(h => h.status !== 'rejected' && h.startTime === startTime && h.endTime === endTime);
@@ -2721,6 +2743,7 @@ function showMiscModal() {
   buildTimeSel15('miscStartTime', true, '');
   buildTimeSel15('miscEndTime',   true, '');
   document.getElementById('miscReason').value = '';
+  document.getElementById('miscLunchTaken').value = '';
   document.getElementById('miscCompNo').checked = true;
   document.getElementById('miscCompSection').style.display = 'none';
   document.getElementById('miscCompDate').value = '';
@@ -2787,9 +2810,12 @@ function submitMisc() {
     if (wantComp && !compDate) { showToast('振替希望日を選択してください'); return; }
   }
 
+  const lunchVal    = document.getElementById('miscLunchTaken').value;
+  const lunchTaken  = lunchVal === 'yes' ? true : lunchVal === 'no' ? false : null;
+
   const rec = getRecByKey(currentUser, date);
   if (!Array.isArray(rec.misc)) rec.misc = [];
-  rec.misc.push({ subType, date, endDate, startTime, endTime, wantComp, compDate: wantComp ? compDate : '', compTimeStart: wantComp ? compTimeStart : '', compTimeEnd: wantComp ? compTimeEnd : '', reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' });
+  rec.misc.push({ subType, date, endDate, startTime, endTime, wantComp, compDate: wantComp ? compDate : '', compTimeStart: wantComp ? compTimeStart : '', compTimeEnd: wantComp ? compTimeEnd : '', reason, lunchTaken, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' });
   saveData(); renderAll(); hideModal('modalMisc');
   const dateStr  = endDate ? date+'〜'+endDate : date;
   const timeStr  = startTime ? ' '+startTime+(endTime?'〜'+endTime:'') : '';
@@ -3230,7 +3256,7 @@ function renderStatus() {
 
   // 申請ボタン・ステータスバーの初期化ヘルパー
   function hideAllAppBars() {
-    ['otStatusBar','otExtStatusBar','earlyStatusBar','paidStatusBar','holidayStatusBar','miscStatusBar','lunchStatusBar'].forEach(id=>{
+    ['otStatusBar','otExtStatusBar','earlyStatusBar','paidStatusBar','holidayStatusBar','miscStatusBar'].forEach(id=>{
       document.getElementById(id).style.display='none';
     });
   }
@@ -3300,31 +3326,6 @@ function renderStatus() {
   // 残業予定
   document.getElementById('otPlanned').textContent = rec.ot ? rec.ot.plannedEnd : '--:--';
 
-  // 昼休憩申請ボタン
-  const lb = rec.lunchBreak;
-  const btnLunch = document.getElementById('btnLunch');
-  const lunchBar = document.getElementById('lunchStatusBar');
-  if (btnLunch) {
-    btnLunch.disabled = !hasPairs || (lb && (lb.status === 'pending' || lb.status === 'approved'));
-    document.getElementById('btnLunchText').textContent =
-      lb?.status === 'pending' ? '申請中…' :
-      lb?.status === 'approved' ? (lb.taken ? '昼休憩あり ✅' : '昼休憩なし ✅') :
-      '昼休憩申請';
-  }
-  if (lunchBar) {
-    if (lb?.status) {
-      const lbMap = {
-        pending: '⏳ 昼休憩申請 承認待ち',
-        approved: lb.taken ? '✅ 昼休憩あり 承認済み' : '✅ 昼休憩なし 承認済み',
-        rejected: '🚫 昼休憩申請 却下'
-      };
-      lunchBar.className = 'ot-status-bar lunch' + (lb.status === 'rejected' ? ' rejected' : '');
-      lunchBar.textContent = lbMap[lb.status] || '';
-      lunchBar.style.display = '';
-    } else {
-      lunchBar.style.display = 'none';
-    }
-  }
 
 
   // 打刻ペア一覧
@@ -3451,12 +3452,13 @@ function renderUpcomingApps() {
         else if (t.key==='paid')    detail = app.startTime+'〜'+app.endTime;
         else if (t.key==='holiday') detail = (app.startTime||'')+'〜'+(app.endTime||'');
         else if (t.key==='misc') {
+          const lunchStr = app.lunchTaken === false ? '　🍱昼休憩なし' : app.lunchTaken === true ? '　🍱昼休憩あり' : '';
           if (app.subType === '振替') {
             const wTime = app.workStart ? ' '+app.workStart+(app.workEnd?'〜'+app.workEnd:'') : '';
             const tTime = app.takeStart ? ' '+app.takeStart+(app.takeEnd?'〜'+app.takeEnd:'') : '';
-            detail = `振替　出勤日：${app.workDate}${wTime}　振替休日：${app.takeDate}${tTime}`;
+            detail = `振替　出勤日：${app.workDate}${wTime}　振替休日：${app.takeDate}${tTime}${lunchStr}`;
           } else {
-            detail = app.subType+(app.startTime?' '+app.startTime:'');
+            detail = app.subType+(app.startTime?' '+app.startTime:'')+lunchStr;
           }
         }
         items.push({ targetDate, typeInfo:t, app, detail });
@@ -3637,14 +3639,18 @@ function renderMyApplications() {
         if (t.key==='ot')           detail = '残業予定 '+app.plannedEnd+'まで';
         else if (t.key==='early')   detail = '早出 '+app.startTime+'〜8:00';
         else if (t.key==='paid')    detail = '有給 '+app.startTime+'〜'+app.endTime;
-        else if (t.key==='holiday') detail = '休日出勤 '+app.workDate+' '+(app.startTime||'')+'〜'+(app.endTime||'')+(app.wantComp?' 振替希望':'');
+        else if (t.key==='holiday') {
+          const lunchStr = app.lunchTaken === false ? '　🍱昼休憩なし' : app.lunchTaken === true ? '　🍱昼休憩あり' : '';
+          detail = '休日出勤 '+app.workDate+' '+(app.startTime||'')+'〜'+(app.endTime||'')+(app.wantComp?' 振替希望':'')+lunchStr;
+        }
         else if (t.key==='misc') {
+          const lunchStr = app.lunchTaken === false ? '　🍱昼休憩なし' : app.lunchTaken === true ? '　🍱昼休憩あり' : '';
           if (app.subType === '振替') {
             const wTime = app.workStart ? ' '+app.workStart+(app.workEnd?'〜'+app.workEnd:'') : '';
             const tTime = app.takeStart ? ' '+app.takeStart+(app.takeEnd?'〜'+app.takeEnd:'') : '';
-            detail = `振替　出勤日：${app.workDate}${wTime}　振替休日：${app.takeDate}${tTime}`;
+            detail = `振替　出勤日：${app.workDate}${wTime}　振替休日：${app.takeDate}${tTime}${lunchStr}`;
           } else {
-            detail = app.subType+(app.startTime?' '+app.startTime:'');
+            detail = app.subType+(app.startTime?' '+app.startTime:'')+lunchStr;
           }
         }
         const appIdx = Array.isArray(val) ? idx : null;
@@ -3795,19 +3801,6 @@ function renderMyApplications() {
       }
       const changeReqRejectTxt = (app.changeReq?.status === 'rejected' && app.changeReq?.comment)
         ? `<div style="font-size:12px;color:var(--danger);margin-top:3px;">💬 変更却下：${app.changeReq.comment}</div>` : '';
-      // 休日出勤承認済み + 昼またぎ の場合は昼休憩トグルを追加
-      let lunchToggleHtml = '';
-      if (typeInfo.key === 'holiday' && app.status === 'approved' && overlapsLunch_(app.startTime, app.endTime)) {
-        const lt = app.lunchTaken;
-        const noneActive = lt === false;
-        const haveActive = lt !== false;
-        lunchToggleHtml = `
-  <div style="margin-top:8px;font-size:12px;color:var(--subtext);">
-    🍱 昼休憩：
-    <button onclick="toggleHolidayLunch('${dateKey}',${appIdx},false)" style="padding:3px 10px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;margin-left:4px;background:${noneActive?'#E8F9EF':'#F2F2F7'};color:${noneActive?'#05A847':'var(--subtext)'};border:1px solid ${noneActive?'#A8E6C0':'#E5E5EA'}">なし</button>
-    <button style="padding:3px 10px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;margin-left:4px;background:${haveActive&&lt!==false?'#E8F9EF':'#F2F2F7'};color:${haveActive&&lt!==false?'#05A847':'var(--subtext)'};border:1px solid ${haveActive&&lt!==false?'#A8E6C0':'#E5E5EA'}" onclick="toggleHolidayLunch('${dateKey}',${appIdx},true)">あり</button>
-  </div>`;
-      }
       item.innerHTML = `
         <div class="myapp-header">
           <span class="myapp-type" style="color:${typeInfo.color}">${typeInfo.icon} ${typeInfo.label}</span>
@@ -3822,7 +3815,7 @@ function renderMyApplications() {
           ${approverTxt}
           ${cancelBtn}${reapplyBtn}${changeReqHtml}
         </div>
-        ${lunchToggleHtml}`;
+        `;
     }
     list.appendChild(item);
   });

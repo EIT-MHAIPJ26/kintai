@@ -1087,6 +1087,12 @@ let data = loadData();
 let currentUser = null;
 let pendingRejectKey = null;
 let addTabMode = 'single';
+// DEFAULT_GAS_URLが変わっていたらlocalStorageを自動更新（デプロイURL変更に追従）
+const LAST_DEFAULT_GAS_URL_KEY = 'kintai_last_default_gas_url';
+if (DEFAULT_GAS_URL && localStorage.getItem(LAST_DEFAULT_GAS_URL_KEY) !== DEFAULT_GAS_URL) {
+  localStorage.setItem(GAS_URL_KEY, DEFAULT_GAS_URL);
+  localStorage.setItem(LAST_DEFAULT_GAS_URL_KEY, DEFAULT_GAS_URL);
+}
 // 個別設定 → なければHTMLに埋め込まれたデフォルトURLを使用
 let gasUrl = localStorage.getItem(GAS_URL_KEY) || DEFAULT_GAS_URL;
 

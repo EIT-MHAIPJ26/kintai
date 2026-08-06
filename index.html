@@ -1089,9 +1089,11 @@ let pendingRejectKey = null;
 let addTabMode = 'single';
 // DEFAULT_GAS_URLが変わっていたらlocalStorageを自動更新（デプロイURL変更に追従）
 const LAST_DEFAULT_GAS_URL_KEY = 'kintai_last_default_gas_url';
+const NEEDS_RESYNC_KEY = 'kintai_needs_resync';
 if (DEFAULT_GAS_URL && localStorage.getItem(LAST_DEFAULT_GAS_URL_KEY) !== DEFAULT_GAS_URL) {
   localStorage.setItem(GAS_URL_KEY, DEFAULT_GAS_URL);
   localStorage.setItem(LAST_DEFAULT_GAS_URL_KEY, DEFAULT_GAS_URL);
+  localStorage.setItem(NEEDS_RESYNC_KEY, '1'); // URL変更時は再同期フラグを立てる
 }
 // 個別設定 → なければHTMLに埋め込まれたデフォルトURLを使用
 let gasUrl = localStorage.getItem(GAS_URL_KEY) || DEFAULT_GAS_URL;
@@ -1473,6 +1475,11 @@ function doLogin() {
   checkOvertimeReminder();
   // ログイン時は全員GASから最新データを取得（別デバイスでの打刻を反映）
   if (gasUrl) fetchAllFromGAS();
+  // GAS URLが変わった場合は今日のデータを再同期（旧GAS障害時のデータ欠損を回復）
+  if (gasUrl && localStorage.getItem(NEEDS_RESYNC_KEY) === '1') {
+    localStorage.removeItem(NEEDS_RESYNC_KEY);
+    setTimeout(() => syncRecordToGAS(name, todayKey()), 2000);
+  }
 }
 
 function doLogout() {
@@ -4391,6 +4398,11 @@ updateSyncIndicator('idle');
 
 // セッション復元時も全員GASから最新データを取得（別デバイスでの打刻を反映）
 if (currentUser && gasUrl) fetchAllFromGAS();
+// GAS URLが変わった場合は今日のデータを再同期（セッション復元時）
+if (currentUser && gasUrl && localStorage.getItem(NEEDS_RESYNC_KEY) === '1') {
+  localStorage.removeItem(NEEDS_RESYNC_KEY);
+  setTimeout(() => syncRecordToGAS(currentUser, todayKey()), 2000);
+}
 
 setInterval(()=>{
   if (!currentUser) return;

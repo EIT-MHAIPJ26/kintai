@@ -344,7 +344,7 @@
 <header>
   <span class="logo">🕐</span>
   <h1>勤怠管理</h1>
-  <span id="syncIndicator" onclick="showSyncSettings()" title="クラウド同期設定" style="font-size:15px;cursor:pointer;opacity:0.7;margin-right:4px;"></span>
+  <span id="syncIndicator" onclick="onSyncIndicatorTap()" title="クラウド同期設定" style="font-size:15px;cursor:pointer;opacity:0.7;margin-right:4px;"></span>
   <span class="header-role" id="headerRole">---</span>
 </header>
 
@@ -1099,9 +1099,12 @@ let gasUrl = localStorage.getItem(GAS_URL_KEY) || DEFAULT_GAS_URL;
 // ============================================================
 //  クラウド同期（Google Apps Script）
 // ============================================================
+let _syncErrorState = false;
+
 function updateSyncIndicator(status) {
   const el = document.getElementById('syncIndicator');
   if (!el) return;
+  _syncErrorState = (status === 'error');
   if (!gasUrl) {
     el.textContent = '⚙️'; el.title = 'クラウド同期を設定する'; el.style.opacity = '0.55'; return;
   }
@@ -1109,10 +1112,19 @@ function updateSyncIndicator(status) {
     idle:    { icon:'☁️',    title:'クラウド同期有効（タップで設定）' },
     syncing: { icon:'🔄',    title:'同期中...' },
     ok:      { icon:'☁️',    title:'同期済み' },
-    error:   { icon:'⚠️',   title:'同期エラー（タップで設定を確認）' }
+    error:   { icon:'⚠️',   title:'同期エラー。タップして再送信' }
   };
   const m = map[status] || map.idle;
   el.textContent = m.icon; el.title = m.title; el.style.opacity = '1';
+}
+
+function onSyncIndicatorTap() {
+  if (_syncErrorState && currentUser) {
+    showToast('🔄 再同期中...');
+    syncRecordToGAS(currentUser, todayKey());
+  } else {
+    showSyncSettings();
+  }
 }
 
 // 指定メンバー・日付の記録をGASへ送信

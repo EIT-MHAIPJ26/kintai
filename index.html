@@ -2313,9 +2313,9 @@ function submitEarly() {
 function getPaidTimes() {
   const times = [];
   for (let h = 8; h <= 17; h++) {
-    for (const m of [15, 45]) {
-      if (h === 8  && m < 15) continue;
-      if (h === 17 && m > 15) continue;
+    for (const m of [0, 15, 30, 45]) {
+      if (h === 8  && m < 15) continue;  // 8:15 スタート
+      if (h === 17 && m > 15) continue;  // 17:15 まで
       times.push(String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0'));
     }
   }

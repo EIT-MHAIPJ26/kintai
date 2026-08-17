@@ -1130,6 +1130,26 @@ function onSyncIndicatorTap() {
 }
 
 // 指定メンバー・日付の記録をGASへ送信
+// 同期失敗をLINEWORKSに通知（打刻・申請データがある場合のみ、1度だけ）
+let _syncErrorNotified = false;
+function notifySyncErrorToLW_(name, dateKey) {
+  if (!gasUrl || !name || _syncErrorNotified) return;
+  // 打刻または申請データが存在する場合のみ通知
+  const rec = getRecByKey(name, dateKey);
+  const hasPairs = rec.pairs && rec.pairs.length > 0;
+  const hasApps  = (rec.ot || rec.early || (rec.paid && rec.paid.length > 0) ||
+                    (rec.holiday && rec.holiday.length > 0) ||
+                    (rec.misc && rec.misc.length > 0) ||
+                    (rec.corrReq && rec.corrReq.length > 0));
+  if (!hasPairs && !hasApps) return; // データなし → 通知しない
+  _syncErrorNotified = true;
+  fetch(gasUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify({ action: 'notifySyncError', name, date: dateKey })
+  }).catch(() => {}); // 失敗しても無視
+}
+
 // notifyInfo = { typeName, detail, date } を渡すと通知も同時送信
 function syncRecordToGAS(name, dateKey, notifyInfo) {
   if (!gasUrl) return;
@@ -1146,14 +1166,17 @@ function syncRecordToGAS(name, dateKey, notifyInfo) {
   .then(json => {
     if (json && json.ok) {
       updateSyncIndicator('ok');
+      _syncErrorNotified = false; // 成功したらリセット
     } else {
       updateSyncIndicator('error');
       showToast('❌ 同期失敗: ' + (json?.error || 'サーバーエラー'));
+      notifySyncErrorToLW_(name, dateKey);
     }
   })
   .catch(err => {
     updateSyncIndicator('error');
     showToast('❌ 通信エラー: ' + (err.message || '接続できません'));
+    notifySyncErrorToLW_(name, dateKey);
   });
 }
 

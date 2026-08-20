@@ -4015,34 +4015,39 @@ function renderApprovalTab() {
 function renderApprovalList() {
   if(!currentUser||!isAdmin(currentUser))return;
   const list=document.getElementById('approvalList');
-  const monthKey=todayKey().substring(0,7);
-  const now3=new Date(); const mLbl3=now3.getFullYear()+'年'+(now3.getMonth()+1)+'月分';
-  list.innerHTML=`<div style="font-size:11px;color:var(--subtext);font-weight:600;margin-bottom:8px;padding-left:2px;">📅 ${mLbl3}（承認待ちは全期間表示）</div>`;
+  // 今週の日曜日を起点に計算（日曜リセット）
+  const now3=new Date();
+  const dow=now3.getDay(); // 0=日
+  const weekStart=new Date(now3); weekStart.setDate(now3.getDate()-dow);
+  const weekStartKey=weekStart.toISOString().slice(0,10);
+  const weekEndKey=todayKey();
+  const wLbl=`${weekStart.getMonth()+1}/${weekStart.getDate()}〜${now3.getMonth()+1}/${now3.getDate()}`;
+  list.innerHTML=`<div style="font-size:11px;color:var(--subtext);font-weight:600;margin-bottom:8px;padding-left:2px;">📅 今週分 ${wLbl}（承認待ちは全期間表示）</div>`;
 
   // ── 申請アイテム収集 ──────────────────────────────────────
   const allItems=[];
   getUserNames().forEach(name=>{
     Object.entries(getUserRecords(name)).forEach(([dateKey,r])=>{
       const rec=migrateRec(r);
-      const inMonth=dateKey.startsWith(monthKey);
+      const inWeek=dateKey>=weekStartKey && dateKey<=weekEndKey;
       APP_TYPES.forEach(t=>{
         const val=rec[t.key];
         if(Array.isArray(val)){
           val.forEach((app,idx)=>{
-            if(app?.status && (inMonth || app.status==='pending'))
+            if(app?.status && (inWeek || app.status==='pending'))
               allItems.push({kind:'app',name,dateKey,rec,type:t.key,typeInfo:t,app,idx});
           });
-        } else if(val?.status && (inMonth || val.status==='pending')){
+        } else if(val?.status && (inWeek || val.status==='pending')){
           allItems.push({kind:'app',name,dateKey,rec,type:t.key,typeInfo:t,app:val,idx:null});
         }
       });
-      if(rec.ot?.extension?.status && (inMonth || rec.ot.extension.status==='pending')){
+      if(rec.ot?.extension?.status && (inWeek || rec.ot.extension.status==='pending')){
         allItems.push({kind:'app',name,dateKey,rec,type:'otExt',typeInfo:{key:'otExt',icon:'⏰',label:'残業延長申請',barClass:'pending',color:'var(--purple)'},app:rec.ot.extension,idx:null});
       }
       // 修正依頼
       if(Array.isArray(rec.corrReq)){
         rec.corrReq.forEach((req,idx)=>{
-          if(!dateKey.startsWith(monthKey) && req.status!=='pending') return;
+          if(!inWeek && req.status!=='pending') return;
           allItems.push({kind:'corr',name,dateKey,rec,req,idx});
         });
       }
@@ -4053,12 +4058,12 @@ function renderApprovalList() {
         apps.forEach((app,idx)=>{
           if(!app?.changeReq) return;
           const cr=app.changeReq;
-          if(!dateKey.startsWith(monthKey) && cr.status!=='pending') return;
+          if(!inWeek && cr.status!=='pending') return;
           allItems.push({kind:'changeReq',name,dateKey,rec,appType:t.key,typeInfo:t,app,appIdx:Array.isArray(val)?idx:null,cr});
         });
       });
       // 昼休憩申請
-      if(rec.lunchBreak?.status && (inMonth || rec.lunchBreak.status==='pending')){
+      if(rec.lunchBreak?.status && (inWeek || rec.lunchBreak.status==='pending')){
         allItems.push({kind:'lunch',name,dateKey,rec,lb:rec.lunchBreak});
       }
     });

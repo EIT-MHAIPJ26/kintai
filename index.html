@@ -1130,6 +1130,27 @@ function onSyncIndicatorTap() {
 }
 
 // 指定メンバー・日付の記録をGASへ送信
+// 休日出勤申請をsubmittedDate（提出日）行にGAS同期
+function syncHolidayApp_(name, workDateKey, app) {
+  if (!gasUrl) return;
+  const sd = app?.submittedDate;
+  if (!sd || sd === workDateKey) { syncRecordToGAS(name, workDateKey); return; }
+  const recWork = getRecByKey(name, workDateKey);
+  const holForSync = (Array.isArray(recWork.holiday) ? recWork.holiday : [])
+    .filter(h => h.submittedDate === sd);
+  const recSd = getRecByKey(name, sd);
+  const body = { action:'upsertRecord', name, date:sd,
+    pairs:recSd.pairs||[], ot:recSd.ot||null, early:recSd.early||null,
+    paid:recSd.paid||null, holiday:holForSync, misc:recSd.misc||null,
+    corrReq:recSd.corrReq||[], lunchBreak:recSd.lunchBreak||null, updatedAt:recSd.updatedAt||0 };
+  updateSyncIndicator('syncing');
+  fetch(gasUrl, { method:'POST', headers:{'Content-Type':'text/plain'}, body:JSON.stringify(body) })
+    .then(r=>r.json())
+    .then(json=>{ if(json&&json.ok){ updateSyncIndicator('ok'); _syncErrorNotified=false; }
+                  else { updateSyncIndicator('error'); notifySyncErrorToLW_(name,sd); } })
+    .catch(()=>{ updateSyncIndicator('error'); notifySyncErrorToLW_(name,sd); });
+}
+
 // 同期失敗をLINEWORKSに通知（打刻・申請データがある場合のみ、1度だけ）
 let _syncErrorNotified = false;
 function notifySyncErrorToLW_(name, dateKey) {
@@ -1765,7 +1786,8 @@ function approveApplication(userName, dateKey, type, idx) {
     rec[type].approvedAt = Date.now();
   }
   saveData(); renderAll();
-  syncRecordToGAS(userName, dateKey);
+  if (type === 'holiday') syncHolidayApp_(userName, dateKey, app);
+  else syncRecordToGAS(userName, dateKey);
   showToast('✅ 承認しました');
 }
 
@@ -1975,15 +1997,19 @@ function cancelAppByDate(type, dateKey, idx) {
     if (!Array.isArray(rec[type]) || !rec[type][idx]) { showToast('取り消しできる申請がありません'); return; }
     if (rec[type][idx].status === 'rejected') { showToast('取り消しできる申請がありません'); return; }
     if (!confirm(typeName+'を取り消しますか？')) return;
+    const _cancelApp = rec[type][idx];
     rec[type].splice(idx, 1);
+    saveData(); renderAll();
+    if (type === 'holiday') syncHolidayApp_(currentUser, dateKey, _cancelApp);
+    else syncRecordToGAS(currentUser, dateKey);
   } else {
     // 単体型（残業・早出）
     if (!rec[type] || rec[type].status === 'rejected') { showToast('取り消しできる申請がありません'); return; }
     if (!confirm(typeName+'を取り消しますか？')) return;
     rec[type] = null;
+    saveData(); renderAll();
+    syncRecordToGAS(currentUser, dateKey);
   }
-  saveData(); renderAll();
-  syncRecordToGAS(currentUser, dateKey);
   showToast('🗑️ '+typeName+'を取り消しました');
 }
 
@@ -2212,7 +2238,13 @@ function confirmReject() {
     }
   }
   pendingRejectKey = null; saveData(); renderAll(); hideModal('rejectModal');
-  syncRecordToGAS(userName, dateKey);
+  if (type === 'holiday') {
+    const _rejRec = getRecByKey(userName, dateKey);
+    const _rejApp = (idxStr !== undefined && idxStr !== '') ? (_rejRec.holiday?.[parseInt(idxStr)]) : _rejRec.holiday;
+    syncHolidayApp_(userName, dateKey, _rejApp);
+  } else {
+    syncRecordToGAS(userName, dateKey);
+  }
   showToast('🚫 却下しました');
 }
 
@@ -2479,7 +2511,7 @@ function submitHoliday() {
   if (_holidayReapply) {
     const reapplyReason = document.getElementById('holidayReapplyReason').value.trim();
     if (!reapplyReason) { showToast('再申請理由を入力してください'); return; }
-    const newEntry = { workDate, startTime, endTime, wantComp, compDate: wantComp?compDate:'', compTime: wantComp?compTime:'', reason, reapplyReason, lunchTaken, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
+    const newEntry = { workDate, startTime, endTime, wantComp, compDate: wantComp?compDate:'', compTime: wantComp?compTime:'', reason, reapplyReason, lunchTaken, submittedDate: todayKey(), status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
     // 再申請：既存エントリを新しい内容で上書き
     const ctx = _holidayReapply;
     _holidayReapply = null;
@@ -2487,18 +2519,29 @@ function submitHoliday() {
     if (!Array.isArray(rec.holiday)) rec.holiday = [];
     rec.holiday[ctx.idx] = newEntry;
     saveData(); renderAll(); hideModal('modalHoliday');
-    notifyAdminsViaGAS('holiday', workDate+' '+startTime+'〜'+endTime+' （再申請：'+reapplyReason+'）', ctx.dateKey);
+    const _reapplyDetail = workDate+' '+startTime+'〜'+endTime+' （再申請：'+reapplyReason+'）';
+    const _reapplyNotify = { name:currentUser, typeName:'休日出勤申請', detail:_reapplyDetail, date:newEntry.submittedDate };
+    const _reapplyRec = getRecByKey(currentUser, newEntry.submittedDate);
+    const _reapplyHol = (Array.isArray(getRecByKey(currentUser,ctx.dateKey).holiday)?getRecByKey(currentUser,ctx.dateKey).holiday:[]).filter(h=>h.submittedDate===newEntry.submittedDate);
+    const _reapplyBody = { action:'upsertRecord', name:currentUser, date:newEntry.submittedDate, pairs:_reapplyRec.pairs||[], ot:_reapplyRec.ot||null, early:_reapplyRec.early||null, paid:_reapplyRec.paid||null, holiday:_reapplyHol, misc:_reapplyRec.misc||null, corrReq:_reapplyRec.corrReq||[], lunchBreak:_reapplyRec.lunchBreak||null, updatedAt:_reapplyRec.updatedAt||0, notifyInfo:_reapplyNotify };
+    updateSyncIndicator('syncing');
+    fetch(gasUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(_reapplyBody)}).then(r=>r.json()).then(json=>{if(json&&json.ok)updateSyncIndicator('ok');else updateSyncIndicator('error');}).catch(()=>updateSyncIndicator('error'));
     showToast('🔄 休日出勤を再申請しました（'+startTime+'〜'+endTime+'）');
   } else {
     // 新規申請
-    const newEntry = { workDate, startTime, endTime, wantComp, compDate: wantComp?compDate:'', compTime: wantComp?compTime:'', reason, lunchTaken, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
+    const newEntry = { workDate, startTime, endTime, wantComp, compDate: wantComp?compDate:'', compTime: wantComp?compTime:'', reason, lunchTaken, submittedDate: todayKey(), status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
     const rec = getRecByKey(currentUser, workDate);
     if (!Array.isArray(rec.holiday)) rec.holiday = rec.holiday ? [rec.holiday] : [];
     const dup = rec.holiday.find(h => h.status !== 'rejected' && h.startTime === startTime && h.endTime === endTime);
     if (dup) { showToast('同じ時間帯の休日出勤申請があります'); return; }
     rec.holiday.push(newEntry);
     saveData(); renderAll(); hideModal('modalHoliday');
-    notifyAdminsViaGAS('holiday', workDate+' '+startTime+'〜'+endTime, workDate);
+    const _newHolNotify = { name:currentUser, typeName:'休日出勤申請', detail:workDate+' '+startTime+'〜'+endTime, date:newEntry.submittedDate };
+    const _newHolRec = getRecByKey(currentUser, newEntry.submittedDate);
+    const _newHolList = (Array.isArray(rec.holiday)?rec.holiday:[]).filter(h=>h.submittedDate===newEntry.submittedDate);
+    const _newHolBody = { action:'upsertRecord', name:currentUser, date:newEntry.submittedDate, pairs:_newHolRec.pairs||[], ot:_newHolRec.ot||null, early:_newHolRec.early||null, paid:_newHolRec.paid||null, holiday:_newHolList, misc:_newHolRec.misc||null, corrReq:_newHolRec.corrReq||[], lunchBreak:_newHolRec.lunchBreak||null, updatedAt:_newHolRec.updatedAt||0, notifyInfo:_newHolNotify };
+    updateSyncIndicator('syncing');
+    fetch(gasUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(_newHolBody)}).then(r=>r.json()).then(json=>{if(json&&json.ok){updateSyncIndicator('ok');_syncErrorNotified=false;}else{updateSyncIndicator('error');notifySyncErrorToLW_(currentUser,newEntry.submittedDate);}}).catch(()=>{updateSyncIndicator('error');notifySyncErrorToLW_(currentUser,newEntry.submittedDate);});
     showToast('🏢 休日出勤申請を送信しました（'+startTime+'〜'+endTime+'）');
   }
 }

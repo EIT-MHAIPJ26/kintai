@@ -3151,28 +3151,32 @@ function renderEditAppForm(rec) {
       <select id="eaEarlyStart" style="${selectStyle}">${buildOptHtml_(earlyTimeValues_(), rec.early.startTime)}</select>
     </div>`;
   }
-  if (rec.paid) {
+  const _eaPaidArr = Array.isArray(rec.paid) ? rec.paid : (rec.paid ? [rec.paid] : []);
+  const _eaPaid = _eaPaidArr.find(p => p.status !== 'rejected');
+  if (_eaPaid) {
     const paidVals = getPaidTimes();
     html += `<div style="${sectionStyle}">
       <div style="font-size:13px;font-weight:700;color:var(--orange);margin-bottom:8px;">📅 有給申請</div>
       <div style="display:flex;gap:8px;align-items:center;">
         <div style="flex:1;"><label style="${labelStyle}">開始</label>
-          <select id="eaPaidStart" style="${selectStyle}">${buildOptHtml_(paidVals, rec.paid.startTime)}</select></div>
+          <select id="eaPaidStart" style="${selectStyle}">${buildOptHtml_(paidVals, _eaPaid.startTime)}</select></div>
         <span style="color:var(--subtext);padding-top:18px;">〜</span>
         <div style="flex:1;"><label style="${labelStyle}">終了</label>
-          <select id="eaPaidEnd" style="${selectStyle}">${buildOptHtml_(paidVals, rec.paid.endTime)}</select></div>
+          <select id="eaPaidEnd" style="${selectStyle}">${buildOptHtml_(paidVals, _eaPaid.endTime)}</select></div>
       </div>
     </div>`;
   }
-  if (rec.holiday) {
+  const _eaHolArr = Array.isArray(rec.holiday) ? rec.holiday : (rec.holiday ? [rec.holiday] : []);
+  const _eaHol = _eaHolArr.find(h => h.status !== 'rejected');
+  if (_eaHol) {
     html += `<div style="${sectionStyle}">
       <div style="font-size:13px;font-weight:700;color:var(--danger);margin-bottom:8px;">🏢 休日出勤申請</div>
       <div style="display:flex;gap:8px;align-items:center;">
         <div style="flex:1;"><label style="${labelStyle}">開始</label>
-          <input type="time" id="eaHolStart" value="${rec.holiday.startTime||''}" style="${timeStyle}"/></div>
+          <input type="time" id="eaHolStart" value="${_eaHol.startTime||''}" style="${timeStyle}"/></div>
         <span style="color:var(--subtext);padding-top:18px;">〜</span>
         <div style="flex:1;"><label style="${labelStyle}">終了</label>
-          <input type="time" id="eaHolEnd" value="${rec.holiday.endTime||''}" style="${timeStyle}"/></div>
+          <input type="time" id="eaHolEnd" value="${_eaHol.endTime||''}" style="${timeStyle}"/></div>
       </div>
     </div>`;
   }
@@ -3193,15 +3197,27 @@ function saveEditApp() {
   const eaHolStart   = document.getElementById('eaHolStart');
   const eaHolEnd     = document.getElementById('eaHolEnd');
 
-  if (eaOtEnd      && rec.ot)      rec.ot.plannedEnd        = eaOtEnd.value;
-  if (eaEarlyStart && rec.early)   rec.early.startTime      = eaEarlyStart.value;
-  if (eaPaidStart  && rec.paid)    rec.paid.startTime       = eaPaidStart.value;
-  if (eaPaidEnd    && rec.paid)    rec.paid.endTime         = eaPaidEnd.value;
-  if (eaHolStart   && rec.holiday) rec.holiday.startTime   = eaHolStart.value;
-  if (eaHolEnd     && rec.holiday) rec.holiday.endTime     = eaHolEnd.value;
+  if (eaOtEnd      && rec.ot)    rec.ot.plannedEnd    = eaOtEnd.value;
+  if (eaEarlyStart && rec.early) rec.early.startTime  = eaEarlyStart.value;
+
+  const _sePaidArr = Array.isArray(rec.paid) ? rec.paid : (rec.paid ? [rec.paid] : []);
+  const _sePaid = _sePaidArr.find(p => p.status !== 'rejected');
+  if (eaPaidStart && _sePaid) _sePaid.startTime = eaPaidStart.value;
+  if (eaPaidEnd   && _sePaid) _sePaid.endTime   = eaPaidEnd.value;
+
+  const _seHolArr = Array.isArray(rec.holiday) ? rec.holiday : (rec.holiday ? [rec.holiday] : []);
+  const _seHol = _seHolArr.find(h => h.status !== 'rejected');
+  if (eaHolStart && _seHol) _seHol.startTime = eaHolStart.value;
+  if (eaHolEnd   && _seHol) _seHol.endTime   = eaHolEnd.value;
 
   saveData(); renderAll(); hideModal('modalEditApp');
-  syncRecordToGAS(name, dateKey);
+
+  // 休日出勤は submittedDate の行に同期
+  if (_seHol) {
+    syncHolidayApp_(name, dateKey, _seHol);
+  } else {
+    syncRecordToGAS(name, dateKey);
+  }
   showToast('✅ 申請時間を修正しました');
 }
 

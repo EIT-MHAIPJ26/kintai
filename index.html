@@ -1153,6 +1153,36 @@ function syncHolidayApp_(name, workDateKey, app) {
 
 // 同期失敗をLINEWORKSに通知（打刻・申請データがある場合のみ、1度だけ）
 let _syncErrorNotified = false;
+
+// 自動再送キュー [{name, dateKey, retries}]
+let _syncRetryQueue = [];
+function addToRetryQueue_(name, dateKey) {
+  if (!_syncRetryQueue.find(q => q.name === name && q.dateKey === dateKey)) {
+    _syncRetryQueue.push({ name, dateKey, retries: 0 });
+  }
+}
+function processSyncRetryQueue_() {
+  if (!gasUrl || _syncRetryQueue.length === 0) return;
+  const item = _syncRetryQueue[0];
+  if (item.retries >= 10) { _syncRetryQueue.shift(); return; }
+  item.retries++;
+  const rec = getRecByKey(item.name, item.dateKey);
+  const body = { action:'upsertRecord', name:item.name, date:item.dateKey,
+    pairs:rec.pairs||[], ot:rec.ot||null, early:rec.early||null,
+    paid:rec.paid||null, holiday:rec.holiday||null, misc:rec.misc||null,
+    corrReq:rec.corrReq||[], lunchBreak:rec.lunchBreak||null, updatedAt:rec.updatedAt||0 };
+  fetch(gasUrl, { method:'POST', headers:{'Content-Type':'text/plain'}, body:JSON.stringify(body) })
+    .then(r => r.json())
+    .then(json => {
+      if (json && json.ok) {
+        _syncRetryQueue = _syncRetryQueue.filter(q => !(q.name === item.name && q.dateKey === item.dateKey));
+        updateSyncIndicator('ok');
+        _syncErrorNotified = false;
+        showToast('✅ 自動再送信が完了しました');
+      }
+    })
+    .catch(() => {}); // 失敗はそのまま次回リトライ
+}
 function notifySyncErrorToLW_(name, dateKey) {
   if (!gasUrl || !name || _syncErrorNotified) return;
   // 打刻または申請データが存在する場合のみ通知
@@ -1188,16 +1218,20 @@ function syncRecordToGAS(name, dateKey, notifyInfo) {
     if (json && json.ok) {
       updateSyncIndicator('ok');
       _syncErrorNotified = false; // 成功したらリセット
+      // 再送キューから削除
+      _syncRetryQueue = _syncRetryQueue.filter(q => !(q.name === name && q.dateKey === dateKey));
     } else {
       updateSyncIndicator('error');
-      showToast('❌ 同期失敗: ' + (json?.error || 'サーバーエラー'));
+      showToast('❌ 同期失敗。自動で再送します');
       notifySyncErrorToLW_(name, dateKey);
+      addToRetryQueue_(name, dateKey);
     }
   })
   .catch(err => {
     updateSyncIndicator('error');
-    showToast('❌ 通信エラー: ' + (err.message || '接続できません'));
+    showToast('❌ 通信エラー。自動で再送します');
     notifySyncErrorToLW_(name, dateKey);
+    addToRetryQueue_(name, dateKey);
   });
 }
 
@@ -4500,6 +4534,8 @@ if (currentUser && gasUrl && localStorage.getItem(NEEDS_RESYNC_KEY) === '1') {
 
 setInterval(()=>{
   if (!currentUser) return;
+  // 再送キューがあれば先に処理
+  processSyncRetryQueue_();
   if (isAdmin(currentUser)) {
     renderAll();
     if (gasUrl) fetchAllFromGAS(); // 管理者は常にGASから最新状態を取得

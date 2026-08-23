@@ -1786,8 +1786,13 @@ function approveApplication(userName, dateKey, type, idx) {
     rec[type].approvedAt = Date.now();
   }
   saveData(); renderAll();
-  if (type === 'holiday') syncHolidayApp_(userName, dateKey, app);
-  else syncRecordToGAS(userName, dateKey);
+  if (type === 'holiday') {
+    const _appHolArr = Array.isArray(rec.holiday) ? rec.holiday : (rec.holiday ? [rec.holiday] : []);
+    const _appHolIdx = (idx !== undefined && idx !== null && idx !== '') ? parseInt(idx) : 0;
+    syncHolidayApp_(userName, dateKey, _appHolArr[_appHolIdx]);
+  } else {
+    syncRecordToGAS(userName, dateKey);
+  }
   showToast('✅ 承認しました');
 }
 
@@ -2240,7 +2245,9 @@ function confirmReject() {
   pendingRejectKey = null; saveData(); renderAll(); hideModal('rejectModal');
   if (type === 'holiday') {
     const _rejRec = getRecByKey(userName, dateKey);
-    const _rejApp = (idxStr !== undefined && idxStr !== '') ? (_rejRec.holiday?.[parseInt(idxStr)]) : _rejRec.holiday;
+    const _rejHolArr = Array.isArray(_rejRec.holiday) ? _rejRec.holiday : (_rejRec.holiday ? [_rejRec.holiday] : []);
+    const _rejHolIdx = (idxStr !== undefined && idxStr !== '') ? parseInt(idxStr) : 0;
+    const _rejApp = _rejHolArr[_rejHolIdx];
     syncHolidayApp_(userName, dateKey, _rejApp);
   } else {
     syncRecordToGAS(userName, dateKey);

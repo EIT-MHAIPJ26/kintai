@@ -515,7 +515,10 @@
   <!-- 承認管理 -->
   <div id="view-approval" style="display:none">
     <div class="records-card">
-      <div class="card-title">✅ 申請 承認管理（早出・残業・有給・休日出勤）</div>
+      <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;">
+        <span>✅ 申請 承認管理（早出・残業・有給・休日出勤）</span>
+        <button onclick="if(gasUrl)fetchAllFromGAS();" id="approvalFetchBtn" style="font-size:12px;padding:4px 10px;border:1.5px solid var(--border);border-radius:8px;background:white;color:var(--subtext);cursor:pointer;">🔄 更新</button>
+      </div>
       <div id="approvalList"></div>
     </div>
   </div>
@@ -4531,6 +4534,13 @@ if (currentUser && gasUrl && localStorage.getItem(NEEDS_RESYNC_KEY) === '1') {
   localStorage.removeItem(NEEDS_RESYNC_KEY);
   setTimeout(() => syncRecordToGAS(currentUser, todayKey()), 2000);
 }
+
+// スマホでアプリを前面に戻したとき（LINEWORKSから戻るなど）に自動更新
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && currentUser && gasUrl) {
+    fetchAllFromGAS();
+  }
+});
 
 setInterval(()=>{
   if (!currentUser) return;

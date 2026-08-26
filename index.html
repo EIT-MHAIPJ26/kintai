@@ -1205,12 +1205,14 @@ function notifySyncErrorToLW_(name, dateKey) {
 }
 
 // notifyInfo = { typeName, detail, date } を渡すと通知も同時送信
-function syncRecordToGAS(name, dateKey, notifyInfo) {
+// clearFields = ['early','ot',...] を渡すと GAS 側でその申請を明示削除（キャンセル時用）
+function syncRecordToGAS(name, dateKey, notifyInfo, clearFields) {
   if (!gasUrl) return;
   const rec = getRecByKey(name, dateKey);
   updateSyncIndicator('syncing');
   const body = { action:'upsertRecord', name, date:dateKey, pairs:rec.pairs||[], ot:rec.ot||null, early:rec.early||null, paid:rec.paid||null, holiday:rec.holiday||null, misc:rec.misc||null, corrReq:rec.corrReq||[], lunchBreak:rec.lunchBreak||null, updatedAt:rec.updatedAt||0 };
-  if (notifyInfo) body.notifyInfo = notifyInfo;
+  if (notifyInfo)   body.notifyInfo  = notifyInfo;
+  if (clearFields && clearFields.length) body.clearFields = clearFields;
   fetch(gasUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain' },
@@ -2050,7 +2052,7 @@ function cancelAppByDate(type, dateKey, idx) {
     if (!confirm(typeName+'を取り消しますか？')) return;
     rec[type] = null;
     saveData(); renderAll();
-    syncRecordToGAS(currentUser, dateKey);
+    syncRecordToGAS(currentUser, dateKey, null, [type]); // GASに明示削除を指示
   }
   showToast('🗑️ '+typeName+'を取り消しました');
 }

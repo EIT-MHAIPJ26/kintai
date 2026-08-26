@@ -1241,7 +1241,8 @@ function syncRecordToGAS(name, dateKey, notifyInfo, clearFields) {
 }
 
 // GASから全員のデータを取得してローカルにマージ
-function fetchAllFromGAS(onDone) {
+// silent=true のときはトーストを表示しない（自動バックグラウンド更新用）
+function fetchAllFromGAS(onDone, silent) {
   if (!gasUrl) { if (onDone) onDone(false); return; }
   const btn = document.getElementById('fetchBtn');
   if (btn) { btn.textContent = '🔄 取得中…'; btn.disabled = true; }
@@ -1284,10 +1285,10 @@ function fetchAllFromGAS(onDone) {
     }
     saveData(); renderAll();
     updateSyncIndicator('ok');
-    showToast('☁️ データを更新しました');
+    if (!silent) showToast('☁️ データを更新しました');
     if (onDone) onDone(true);
   })
-  .catch(() => { updateSyncIndicator('error'); showToast('❌ 同期失敗。URLを確認してください'); if (onDone) onDone(false); })
+  .catch(() => { updateSyncIndicator('error'); if (!silent) showToast('❌ 同期失敗。URLを確認してください'); if (onDone) onDone(false); })
   .finally(() => { if (btn) { btn.textContent = '🔄 更新'; btn.disabled = false; } });
 }
 
@@ -4368,10 +4369,10 @@ function switchTab(tab) {
   if (tab === 'members') {
     const notice = document.getElementById('gasNoticeBar');
     if (notice) notice.style.display = gasUrl ? 'none' : '';
-    if (gasUrl) fetchAllFromGAS();
+    if (gasUrl) fetchAllFromGAS(null, true); // タブ切り替えはサイレント
   }
   if (tab === 'approval' && gasUrl) {
-    fetchAllFromGAS();
+    fetchAllFromGAS(null, true); // タブ切り替えはサイレント
   }
 }
 
@@ -4538,9 +4539,15 @@ if (currentUser && gasUrl && localStorage.getItem(NEEDS_RESYNC_KEY) === '1') {
 }
 
 // スマホでアプリを前面に戻したとき（LINEWORKSから戻るなど）に自動更新
+// ただし連続呼び出しを防ぐため60秒以内は再実行しない
+let _lastVisibilityFetch = 0;
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && currentUser && gasUrl) {
-    fetchAllFromGAS();
+    const now = Date.now();
+    if (now - _lastVisibilityFetch > 60000) {
+      _lastVisibilityFetch = now;
+      fetchAllFromGAS(null, true); // サイレント（トースト非表示）
+    }
   }
 });
 
@@ -4550,13 +4557,13 @@ setInterval(()=>{
   processSyncRetryQueue_();
   if (isAdmin(currentUser)) {
     renderAll();
-    if (gasUrl) fetchAllFromGAS(); // 管理者は常にGASから最新状態を取得
+    if (gasUrl) fetchAllFromGAS(null, true); // 管理者は常にGASから最新状態を取得（サイレント）
     return;
   }
   const rec = getTodayRec();
   if (isCurrentlyWorking(rec)) renderAll();
-  // 一般メンバーも残業申請の承認状況をGASから取得
-  if (gasUrl) fetchAllFromGAS();
+  // 一般メンバーも残業申請の承認状況をGASから取得（自動なのでサイレント）
+  if (gasUrl) fetchAllFromGAS(null, true);
   checkCheckinReminder();  // 出勤リマインダーチェック
   checkOvertimeReminder(); // 退勤リマインダーチェック
 }, 30000); // 30秒ごと

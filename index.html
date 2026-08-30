@@ -1170,9 +1170,11 @@ function processSyncRetryQueue_() {
   if (item.retries >= 10) { _syncRetryQueue.shift(); return; }
   item.retries++;
   const rec = getRecByKey(item.name, item.dateKey);
+  const _retryHolArr = Array.isArray(rec.holiday) ? rec.holiday : (rec.holiday ? [rec.holiday] : []);
+  const _retryHol = _retryHolArr.filter(h => !h.submittedDate || h.submittedDate === item.dateKey);
   const body = { action:'upsertRecord', name:item.name, date:item.dateKey,
     pairs:rec.pairs||[], ot:rec.ot||null, early:rec.early||null,
-    paid:rec.paid||null, holiday:rec.holiday||null, misc:rec.misc||null,
+    paid:rec.paid||null, holiday:_retryHol.length ? _retryHol : null, misc:rec.misc||null,
     corrReq:rec.corrReq||[], lunchBreak:rec.lunchBreak||null, updatedAt:rec.updatedAt||0 };
   fetch(gasUrl, { method:'POST', headers:{'Content-Type':'text/plain'}, body:JSON.stringify(body) })
     .then(r => r.json())
@@ -1210,9 +1212,19 @@ function syncRecordToGAS(name, dateKey, notifyInfo, clearFields) {
   if (!gasUrl) return;
   const rec = getRecByKey(name, dateKey);
   updateSyncIndicator('syncing');
-  const body = { action:'upsertRecord', name, date:dateKey, pairs:rec.pairs||[], ot:rec.ot||null, early:rec.early||null, paid:rec.paid||null, holiday:rec.holiday||null, misc:rec.misc||null, corrReq:rec.corrReq||[], lunchBreak:rec.lunchBreak||null, updatedAt:rec.updatedAt||0 };
+  // 休日出勤申請は submittedDate が dateKey と一致するものだけ送る
+  // （別日に提出された申請は syncHolidayApp_ で正しい行に書き込まれる）
+  const holArr = Array.isArray(rec.holiday) ? rec.holiday : (rec.holiday ? [rec.holiday] : []);
+  const holForThisDate = holArr.filter(h => !h.submittedDate || h.submittedDate === dateKey);
+  const hasOtherDateHol = holArr.some(h => h.submittedDate && h.submittedDate !== dateKey);
+  const body = { action:'upsertRecord', name, date:dateKey, pairs:rec.pairs||[], ot:rec.ot||null, early:rec.early||null, paid:rec.paid||null, holiday:holForThisDate.length ? holForThisDate : null, misc:rec.misc||null, corrReq:rec.corrReq||[], lunchBreak:rec.lunchBreak||null, updatedAt:rec.updatedAt||0 };
   if (notifyInfo)   body.notifyInfo  = notifyInfo;
-  if (clearFields && clearFields.length) body.clearFields = clearFields;
+  // 別日提出の休日申請のみで当日申請なし → GASの当該行に誤書き込みがある可能性があるためクリア指示
+  const effectiveClearFields = clearFields ? [...clearFields] : [];
+  if (hasOtherDateHol && holForThisDate.length === 0 && !effectiveClearFields.includes('holiday')) {
+    effectiveClearFields.push('holiday');
+  }
+  if (effectiveClearFields.length) body.clearFields = effectiveClearFields;
   fetch(gasUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain' },

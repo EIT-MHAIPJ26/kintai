@@ -1309,27 +1309,32 @@ function fetchAllFromGAS(onDone, silent) {
           }
           return;
         }
-        // GASの提出日行（dk）に保存された休日申請で workDate が dk と異なるものは
-        // 実際の勤務日（workDate）のローカルレコードに移してローカル重複を防ぐ
+        // GASから取得した休日申請の重複防止処理
         if (Array.isArray(rec.holiday)) {
+          // ケース1: workDate が dk と異なる → 提出日行が正（dk）で勤務日が別 → 勤務日レコードに移す
           const crossHols = rec.holiday.filter(h => h.workDate && h.workDate !== dk);
           if (crossHols.length) {
             crossHols.forEach(h => {
-              const wdk = h.workDate; // 実際の勤務日キー
+              const wdk = h.workDate;
               if (!data.records[name]) data.records[name] = {};
               if (!data.records[name][wdk]) data.records[name][wdk] = { pairs:[], ot:null, updatedAt:0 };
               const wRec = data.records[name][wdk];
               const wHolArr = Array.isArray(wRec.holiday) ? wRec.holiday : [];
-              // 同じ提出日の申請があれば上書き、なければ追加
               const existIdx = wHolArr.findIndex(wh => wh.submittedDate === h.submittedDate && wh.workDate === h.workDate);
               if (existIdx >= 0) wHolArr[existIdx] = h;
               else wHolArr.push(h);
               wRec.holiday = wHolArr;
             });
-            // 提出日レコード（dk）からはクロスデートエントリを除去
-            rec.holiday = rec.holiday.filter(h => !h.workDate || h.workDate === dk);
-            if (rec.holiday.length === 0) rec.holiday = null;
           }
+          // ケース2: submittedDate が dk と異なる（旧コードが勤務日行に誤書き込みしたデータ）→ このレコードから除去
+          // 正しいデータは submittedDate 行にあるので、ここには保存しない
+          rec.holiday = rec.holiday.filter(h =>
+            // workDate !== dk のものも除去（ケース1で移動済み）
+            (!h.workDate || h.workDate === dk) &&
+            // submittedDate が dk と異なるのも除去（roguecopy）
+            (!h.submittedDate || h.submittedDate === dk)
+          );
+          if (rec.holiday.length === 0) rec.holiday = null;
         }
         data.records[name][dk] = rec;
       });
@@ -2137,6 +2142,11 @@ function cancelAppByDate(type, dateKey, idx) {
       }
       saveData(); renderAll();
       syncHolidayApp_(currentUser, _wk, _cancelApp); // GAS 提出日行をクリア
+      // dateKey（実際に操作した行）≠ 提出日の場合、そのGAS行も明示クリア
+      // （旧コードが誤って書き込んだデータが残っている可能性があるため）
+      if (dateKey !== _sd) {
+        setTimeout(() => syncRecordToGAS(currentUser, dateKey, null, ['holiday']), 500);
+      }
     } else {
       saveData(); renderAll();
       syncRecordToGAS(currentUser, dateKey);

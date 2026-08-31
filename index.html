@@ -2718,6 +2718,16 @@ function showCorrReqModal() {
   document.getElementById('modalCorrReq').classList.add('show');
 }
 
+// 日付を指定して修正依頼モーダルを開く（今月タブの警告バナーから呼び出し）
+function showCorrReqModalForDate(dateKey, hintText) {
+  if (!currentUser) return;
+  document.getElementById('corrReqDate').value = dateKey;
+  setCorrReqType('clock');
+  document.getElementById('corrReqReason').value = hintText || '';
+  loadCorrReqCurrentRecord();
+  document.getElementById('modalCorrReq').classList.add('show');
+}
+
 function loadCorrReqCurrentRecord() {
   const date = document.getElementById('corrReqDate').value;
   const currentInEl  = document.getElementById('corrCurrentIn');
@@ -3868,16 +3878,53 @@ function renderHistory() {
       otHtml+=`<span class="ot-tag ${app.status}" style="margin-right:4px;">${t.icon}${t.label} ${detail} ${stLabels[app.status]}</span>`;
     });
     if(otHtml) otHtml=`<div style="margin-top:3px;">${otHtml}</div>`;
+
+    // ── 打刻漏れ警告（過去日のみ）──
+    let warnHtml = '';
+    if (!isToday) {
+      const lastPair   = pairs.length > 0 ? pairs[pairs.length - 1] : null;
+      const missingOut = lastPair && !lastPair.out;
+      const missingIn  = pairs.length === 0;
+      const hasOt    = rec.ot    && rec.ot.status    !== 'rejected';
+      const hasEarly = rec.early && rec.early.status !== 'rejected';
+      const holArr_w = Array.isArray(rec.holiday) ? rec.holiday : (rec.holiday ? [rec.holiday] : []);
+      const hasHoliday = holArr_w.some(h => h && h.status !== 'rejected');
+
+      let warnMsgs = [];
+      if (missingOut) {
+        let msg = '退勤未記録';
+        if (hasOt) msg += '（残業申請あり）';
+        warnMsgs.push(msg);
+      }
+      if (missingIn && (hasEarly || hasHoliday)) {
+        let msg = '出勤未記録';
+        if (hasEarly)   msg += '（早出申請あり）';
+        if (hasHoliday) msg += '（休日出勤申請あり）';
+        warnMsgs.push(msg);
+      }
+      if (warnMsgs.length > 0) {
+        const hintText = warnMsgs.join(' / ');
+        warnHtml = `<div style="margin-top:6px;background:#FFF0F0;border:1px solid #FFB3B3;border-radius:8px;padding:6px 10px;font-size:12px;color:#CC0000;display:flex;align-items:center;justify-content:space-between;gap:8px;">
+          <span>⚠️ ${hintText}</span>
+          <button onclick="showCorrReqModalForDate('${key}','${hintText.replace(/'/g,'\\'')}')" style="white-space:nowrap;font-size:11px;padding:2px 9px;border:1px solid #CC0000;border-radius:6px;background:transparent;color:#CC0000;cursor:pointer;flex-shrink:0;">修正依頼</button>
+        </div>`;
+      }
+    }
+
     const item=document.createElement('div');
     item.className='record-item';
+    item.style.flexDirection = 'column';
     item.innerHTML=`
-      <div class="record-date"><div class="d">${d.getMonth()+1}/${d.getDate()}</div><div class="wd">${WEEKDAYS[d.getDay()]}曜</div></div>
-      <div class="record-times">
-        <div class="times">${timesHtml}</div>
-        ${durHtml?`<div class="duration">${durHtml}</div>`:''}
-        ${otHtml}
+      <div style="display:flex;align-items:flex-start;width:100%;">
+        <div class="record-date"><div class="d">${d.getMonth()+1}/${d.getDate()}</div><div class="wd">${WEEKDAYS[d.getDay()]}曜</div></div>
+        <div class="record-times">
+          <div class="times">${timesHtml}</div>
+          ${durHtml?`<div class="duration">${durHtml}</div>`:''}
+          ${otHtml}
+        </div>
+        ${statusHtml}
       </div>
-      ${statusHtml}`;
+      ${warnHtml}`;
     list.appendChild(item);
   });
 }

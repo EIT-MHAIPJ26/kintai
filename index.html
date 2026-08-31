@@ -3906,7 +3906,7 @@ function renderHistory() {
         const hintText = warnMsgs.join(' / ');
         warnHtml = `<div style="margin-top:6px;background:#FFF0F0;border:1px solid #FFB3B3;border-radius:8px;padding:6px 10px;font-size:12px;color:#CC0000;display:flex;align-items:center;justify-content:space-between;gap:8px;">
           <span>⚠️ ${hintText}</span>
-          <button onclick="showCorrReqModalForDate('${key}','${hintText.replace(/'/g,'\\'')}')" style="white-space:nowrap;font-size:11px;padding:2px 9px;border:1px solid #CC0000;border-radius:6px;background:transparent;color:#CC0000;cursor:pointer;flex-shrink:0;">修正依頼</button>
+          <button onclick="showCorrReqModalForDate('${key}','${hintText}')" style="white-space:nowrap;font-size:11px;padding:2px 9px;border:1px solid #CC0000;border-radius:6px;background:transparent;color:#CC0000;cursor:pointer;flex-shrink:0;">修正依頼</button>
         </div>`;
       }
     }

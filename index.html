@@ -3722,8 +3722,9 @@ function renderUpcomingApps() {
     const rec = migrateRec(r);
     APP_TYPES.forEach(t => {
       const val = rec[t.key];
-      const apps = Array.isArray(val) ? val : (val ? [val] : []);
-      apps.forEach(app => {
+      const isArr = Array.isArray(val);
+      const apps = isArr ? val : (val ? [val] : []);
+      apps.forEach((app, arrIdx) => {
         if (!app || app.status === 'rejected') return;
         const targetDate = (t.key === 'holiday' && app.workDate) ? app.workDate : dateKey;
         if (targetDate < today) return;
@@ -3743,7 +3744,7 @@ function renderUpcomingApps() {
             detail = app.subType+(app.startTime?' '+app.startTime:'')+lunchStr;
           }
         }
-        items.push({ targetDate, typeInfo:t, app, detail });
+        items.push({ targetDate, dateKey, typeInfo:t, app, detail, appIdx: isArr ? arrIdx : null });
       });
     });
   });
@@ -3760,16 +3761,27 @@ function renderUpcomingApps() {
   upEl.style.display = '';
   upEl.innerHTML = '<div style="font-size:12px;font-weight:700;color:var(--subtext);margin-bottom:7px;">📋 申請中・承認済みの予定</div>';
 
-  items.forEach(({ targetDate, typeInfo, app, detail }) => {
+  const btnBase = 'font-size:11px;padding:2px 9px;border-radius:6px;background:transparent;cursor:pointer;white-space:nowrap;';
+  const changeableTypes = ['early','paid','misc'];
+
+  items.forEach(({ targetDate, dateKey, typeInfo, app, detail, appIdx }) => {
     const d = new Date(targetDate.replace(/-/g,'/'));
     const dateStr = (d.getMonth()+1)+'/'+d.getDate()+'（'+WEEKDAYS[d.getDay()]+'）';
+    const idxArg = appIdx === null ? 'null' : appIdx;
     const row = document.createElement('div');
-    row.style.cssText = 'display:flex;align-items:center;gap:7px;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px;flex-wrap:wrap;';
+    row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px;flex-wrap:wrap;';
+
+    const cancelBtn = `<button onclick="cancelAppByDate('${typeInfo.key}','${dateKey}',${idxArg})" style="${btnBase}border:1px solid #CC3333;color:#CC3333;">取り消し</button>`;
+    const changeBtn = (app.status === 'approved' && changeableTypes.includes(typeInfo.key))
+      ? `<button onclick="showChangeReqModal('${typeInfo.key}','${dateKey}',${idxArg})" style="${btnBase}border:1px solid var(--subtext);color:var(--subtext);">変更申請</button>`
+      : '';
+
     row.innerHTML = `
       <span style="font-weight:700;color:${typeInfo.color};white-space:nowrap;">${typeInfo.icon} ${typeInfo.label}</span>
       <span style="color:var(--subtext);white-space:nowrap;">${dateStr}</span>
       <span style="flex:1;color:var(--text);">${detail}</span>
-      <span style="padding:2px 8px;border-radius:6px;font-weight:700;white-space:nowrap;background:${stBgs[app.status]};color:${stColors[app.status]};">${stIcons[app.status]} ${stLabels[app.status]}</span>`;
+      <span style="padding:2px 8px;border-radius:6px;font-weight:700;white-space:nowrap;background:${stBgs[app.status]};color:${stColors[app.status]};">${stIcons[app.status]} ${stLabels[app.status]}</span>
+      ${cancelBtn}${changeBtn}`;
     upEl.appendChild(row);
   });
 }

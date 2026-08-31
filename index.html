@@ -1134,31 +1134,46 @@ function onSyncIndicatorTap() {
 
 // 指定メンバー・日付の記録をGASへ送信
 // 休日出勤申請をsubmittedDate（提出日）行にGAS同期
+// 休日出勤申請をGASへ同期する
+// app.submittedDate が workDateKey と異なる場合は提出日行を更新
+// 残りが0件のときは clearFields:['holiday'] で明示削除
 function syncHolidayApp_(name, workDateKey, app) {
   if (!gasUrl) return;
-  const sd = app?.submittedDate;
-  if (!sd || sd === workDateKey) { syncRecordToGAS(name, workDateKey); return; }
+  const sd = app?.submittedDate || workDateKey; // 提出日（なければ勤務日と同じ）
+  const targetDate = sd; // GASで更新する行の日付
+
+  // 提出日レコードに残っている同じ提出日の申請一覧
   const recWork = getRecByKey(name, workDateKey);
-  const holForSync = (Array.isArray(recWork.holiday) ? recWork.holiday : [])
-    .filter(h => h.submittedDate === sd);
-  const recSd = getRecByKey(name, sd);
-  // 提出日のローカルレコードからも同期対象の申請を除いた状態に更新
-  if (Array.isArray(recSd.holiday)) {
-    recSd.holiday = recSd.holiday.filter(h => h.submittedDate !== sd || holForSync.some(hs => hs === h));
-    if (recSd.holiday.length === 0) recSd.holiday = null;
+  const holFromWork = (Array.isArray(recWork.holiday) ? recWork.holiday : [])
+    .filter(h => (h.submittedDate || workDateKey) === sd);
+
+  // 提出日レコードのローカルもクリア（重複防止）
+  if (sd !== workDateKey) {
+    const recSd = getRecByKey(name, sd);
+    if (Array.isArray(recSd.holiday)) {
+      recSd.holiday = recSd.holiday.filter(h => h.workDate !== (app.workDate || workDateKey));
+      if (recSd.holiday.length === 0) recSd.holiday = null;
+    }
   }
-  const body = { action:'upsertRecord', name, date:sd,
-    pairs:recSd.pairs||[], ot:recSd.ot||null, early:recSd.early||null,
-    paid:recSd.paid||null, holiday:holForSync.length ? holForSync : null, misc:recSd.misc||null,
-    corrReq:recSd.corrReq||[], lunchBreak:recSd.lunchBreak||null, updatedAt:recSd.updatedAt||0 };
-  // 空配列の場合は GAS に明示削除を指示（空送信だと GAS が既存データを保持してしまう）
-  if (!holForSync.length) body.clearFields = ['holiday'];
+
+  const recTarget = getRecByKey(name, targetDate);
+  const body = {
+    action: 'upsertRecord', name, date: targetDate,
+    pairs: recTarget.pairs||[], ot: recTarget.ot||null, early: recTarget.early||null,
+    paid: recTarget.paid||null,
+    holiday: holFromWork.length ? holFromWork : null,
+    misc: recTarget.misc||null, corrReq: recTarget.corrReq||[],
+    lunchBreak: recTarget.lunchBreak||null, updatedAt: recTarget.updatedAt||0
+  };
+  // 残り0件 → GASに明示削除を指示（送らないと GAS が既存データを保持する）
+  if (!holFromWork.length) body.clearFields = ['holiday'];
+
   updateSyncIndicator('syncing');
   fetch(gasUrl, { method:'POST', headers:{'Content-Type':'text/plain'}, body:JSON.stringify(body) })
     .then(r=>r.json())
     .then(json=>{ if(json&&json.ok){ updateSyncIndicator('ok'); _syncErrorNotified=false; }
-                  else { updateSyncIndicator('error'); notifySyncErrorToLW_(name,sd); } })
-    .catch(()=>{ updateSyncIndicator('error'); notifySyncErrorToLW_(name,sd); });
+                  else { updateSyncIndicator('error'); notifySyncErrorToLW_(name,targetDate); } })
+    .catch(()=>{ updateSyncIndicator('error'); notifySyncErrorToLW_(name,targetDate); });
 }
 
 // 同期失敗をLINEWORKSに通知（打刻・申請データがある場合のみ、1度だけ）
@@ -2056,10 +2071,22 @@ function cancelApp(type, idx) {
   if (!confirm(typeName+'を取り消しますか？')) return;
   const _cancelledApp = rec[type][idx];
   rec[type].splice(idx, 1);
-  saveData(); renderAll();
-  // 休日出勤は提出日行のGAS/ローカルも更新が必要
-  if (type === 'holiday') syncHolidayApp_(currentUser, todayKey(), _cancelledApp);
-  else syncRecordToGAS(currentUser, todayKey());
+  if (type === 'holiday') {
+    const _wk2 = _cancelledApp.workDate || todayKey();
+    const _sd2 = _cancelledApp.submittedDate || todayKey();
+    if (_sd2 !== todayKey()) {
+      const _sRec2 = getRecByKey(currentUser, _sd2);
+      if (Array.isArray(_sRec2.holiday)) {
+        _sRec2.holiday = _sRec2.holiday.filter(h => !(h.workDate === _wk2 && (h.submittedDate||_sd2) === _sd2));
+        if (_sRec2.holiday.length === 0) _sRec2.holiday = null;
+      }
+    }
+    saveData(); renderAll();
+    syncHolidayApp_(currentUser, _wk2, _cancelledApp);
+  } else {
+    saveData(); renderAll();
+    syncRecordToGAS(currentUser, todayKey());
+  }
   showToast('🗑️ '+typeName+'を取り消しました');
 }
 
@@ -2088,9 +2115,32 @@ function cancelAppByDate(type, dateKey, idx) {
     if (!confirm(typeName+'を取り消しますか？')) return;
     const _cancelApp = rec[type][idx];
     rec[type].splice(idx, 1);
-    saveData(); renderAll();
-    if (type === 'holiday') syncHolidayApp_(currentUser, dateKey, _cancelApp);
-    else syncRecordToGAS(currentUser, dateKey);
+    if (type === 'holiday') {
+      // 勤務日と提出日の両方のローカルレコードから削除
+      const _wk = _cancelApp.workDate || dateKey;
+      const _sd = _cancelApp.submittedDate || dateKey;
+      // dateKey が workDate と異なる場合 → 勤務日レコードからも削除
+      if (_wk !== dateKey) {
+        const _wRec = getRecByKey(currentUser, _wk);
+        if (Array.isArray(_wRec.holiday)) {
+          _wRec.holiday = _wRec.holiday.filter(h => !(h.workDate === _wk && (h.submittedDate||_wk) === _sd));
+          if (_wRec.holiday.length === 0) _wRec.holiday = null;
+        }
+      }
+      // dateKey が submittedDate と異なる場合 → 提出日レコードからも削除
+      if (_sd !== dateKey) {
+        const _sRec = getRecByKey(currentUser, _sd);
+        if (Array.isArray(_sRec.holiday)) {
+          _sRec.holiday = _sRec.holiday.filter(h => !(h.workDate === _wk && (h.submittedDate||_sd) === _sd));
+          if (_sRec.holiday.length === 0) _sRec.holiday = null;
+        }
+      }
+      saveData(); renderAll();
+      syncHolidayApp_(currentUser, _wk, _cancelApp); // GAS 提出日行をクリア
+    } else {
+      saveData(); renderAll();
+      syncRecordToGAS(currentUser, dateKey);
+    }
   } else {
     // 単体型（残業・早出）
     if (!rec[type] || rec[type].status === 'rejected') { showToast('取り消しできる申請がありません'); return; }

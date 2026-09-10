@@ -3882,7 +3882,7 @@ function renderHistory() {
     const pairs=rec.pairs||[];
     const totalMin=totalMinForRec(rec,isToday);
     const working=isCurrentlyWorking(rec);
-    let statusHtml='',timesHtml='',durHtml='',otHtml='';
+    let statusHtml='',timesHtml='',durHtml='';
     if(pairs.length===0){
       statusHtml='<span class="record-status absent">欠勤</span>';
       timesHtml='--:--（出勤）〜 --:--（退勤）';
@@ -3907,18 +3907,6 @@ function renderHistory() {
       }
       durHtml=workH?`${workH}（勤務時間）`:'';
     }
-    const stLabels={pending:'審査中',approved:'承認済',rejected:'却下'};
-    APP_TYPES.forEach(t=>{
-      const app=rec[t.key];
-      if(!app) return;
-      let detail='';
-      if(t.key==='ot')      detail=app.plannedEnd+'まで';
-      else if(t.key==='early')   detail=app.startTime+'〜8:00';
-      else if(t.key==='paid')    detail=app.startTime+'〜'+app.endTime;
-      else if(t.key==='holiday') detail=app.workDate+' '+(app.startTime||'')+'〜'+(app.endTime||'')+(app.wantComp?'（振替）':'');
-      otHtml+=`<span class="ot-tag ${app.status}" style="margin-right:4px;">${t.icon}${t.label} ${detail} ${stLabels[app.status]}</span>`;
-    });
-    if(otHtml) otHtml=`<div style="margin-top:3px;">${otHtml}</div>`;
 
     // ── 打刻漏れ警告（過去日のみ）──
     let warnHtml = '';
@@ -3961,7 +3949,6 @@ function renderHistory() {
         <div class="record-times">
           <div class="times">${timesHtml}</div>
           ${durHtml?`<div class="duration">${durHtml}</div>`:''}
-          ${otHtml}
         </div>
         ${statusHtml}
       </div>

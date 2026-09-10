@@ -119,13 +119,14 @@
     /* 今週サマリー */
     .summary-card{background:var(--card);border-radius:16px;padding:16px 18px;margin-bottom:14px;box-shadow:var(--shadow);}
     .card-title{font-size:14px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:6px;}
-    .week-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center;}
-    .week-day{font-size:11px;color:var(--subtext);margin-bottom:3px;}
-    .week-bar-wrap{height:48px;display:flex;align-items:flex-end;justify-content:center;}
-    .week-bar{width:100%;border-radius:4px 4px 0 0;min-height:4px;background:#E8F9EF;}
-    .week-bar.today{background:var(--primary);}
-    .week-bar.has-data{background:#A8E6C0;}
-    .week-hours{font-size:10px;color:var(--subtext);margin-top:2px;}
+    .week-list{display:flex;flex-direction:column;gap:6px;}
+    .week-row{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:10px;background:#F8F8F8;font-size:13px;}
+    .week-row.today{background:#E8F9EF;border:1px solid #A8E6C0;}
+    .week-row.absent{opacity:0.5;}
+    .week-row .wr-day{font-weight:700;color:var(--subtext);min-width:28px;font-size:12px;}
+    .week-row.today .wr-day{color:var(--primary-dark);}
+    .week-row .wr-times{flex:1;color:var(--text);}
+    .week-row .wr-dur{font-size:12px;color:var(--subtext);white-space:nowrap;}
 
     /* タブ */
     .tabs{display:flex;background:var(--card);border-radius:12px;padding:4px;margin-bottom:14px;box-shadow:var(--shadow);gap:4px;}
@@ -451,8 +452,8 @@
 
   <!-- 今週サマリー -->
   <div class="summary-card">
-    <div class="card-title">📊 今週の勤務時間</div>
-    <div class="week-grid" id="weekGrid"></div>
+    <div class="card-title">📊 今週の勤務記録</div>
+    <div class="week-list" id="weekGrid"></div>
   </div>
 
   <!-- タブ -->
@@ -3822,26 +3823,37 @@ function renderWeekSummary() {
   grid.innerHTML = '';
   const now = new Date();
   const dow = now.getDay();
-  const mon = new Date(now); mon.setDate(now.getDate()-dow);
+  const sun = new Date(now); sun.setDate(now.getDate()-dow);
   const recs = getUserRecords();
-  let maxMin=0;
-  const days=[];
   for(let i=0;i<7;i++){
-    const d=new Date(mon); d.setDate(mon.getDate()+i);
+    const d=new Date(sun); d.setDate(sun.getDate()+i);
     const key=toDateKey(d);
     const rawRec=recs[key];
     const rec=rawRec?migrateRec(rawRec):null;
-    const min=rec?totalMinForRec(rec,i===dow):0;
-    if(min>maxMin)maxMin=min;
-    days.push({d,min,isToday:i===dow});
+    const isToday=(i===dow);
+    const pairs=rec?rec.pairs||[]:[];
+    const working=rec?isCurrentlyWorking(rec):false;
+    const dayLabel=WEEKDAYS[d.getDay()]+'　'+(d.getMonth()+1)+'/'+(d.getDate());
+    let timesHtml='欠勤';
+    let durHtml='';
+    if(pairs.length>0){
+      const inStr=fmtTime(pairs[0].in);
+      if(working){
+        timesHtml=`${inStr}（出勤）〜 勤務中`;
+        const totalMin=totalMinForRec(rec,true);
+        durHtml=fmtMin(totalMin)+'（進行中）';
+      } else {
+        const outStr=fmtTime(pairs[pairs.length-1].out);
+        timesHtml=`${inStr}（出勤）〜 ${outStr}（退勤）`;
+        const workH=calcWorkHoursFromPairs(pairs);
+        if(workH) durHtml=workH+'（勤務時間）';
+      }
+    }
+    const row=document.createElement('div');
+    row.className='week-row'+(isToday?' today':'')+(pairs.length===0?' absent':'');
+    row.innerHTML=`<span class="wr-day">${dayLabel}</span><span class="wr-times">${timesHtml}</span>${durHtml?`<span class="wr-dur">${durHtml}</span>`:''}`;
+    grid.appendChild(row);
   }
-  if(maxMin===0)maxMin=480;
-  days.forEach(({d,min,isToday})=>{
-    const pct=Math.min(100,Math.round(min/maxMin*100));
-    const col=document.createElement('div');
-    col.innerHTML=`<div class="week-day">${WEEKDAYS[d.getDay()]}</div><div class="week-bar-wrap"><div class="week-bar ${isToday?'today':min>0?'has-data':''}" style="height:${pct}%"></div></div>`;
-    grid.appendChild(col);
-  });
 }
 
 function renderMonthView() {

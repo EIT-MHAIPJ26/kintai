@@ -1523,6 +1523,32 @@ function totalMinForRec(rec, isToday) {
   return total;
 }
 
+// スプレッドシートと同じ計算：8:15〜17:15の定時内勤務時間（15分単位、昼休憩12:15〜13:15控除）
+function calcWorkHoursFromPairs(pairs) {
+  if (!pairs || pairs.length === 0) return '';
+  const firstIn = pairs[0].in;
+  const lastOut = pairs[pairs.length-1].out;
+  if (!firstIn || !lastOut) return '';
+  const inDate = new Date(firstIn);
+  const outDate = new Date(lastOut);
+  const rawInMin  = inDate.getHours()  * 60 + inDate.getMinutes();
+  const rawOutMin = outDate.getHours() * 60 + outDate.getMinutes();
+  // 出勤：15分切り上げ、退勤：15分切り捨て
+  const inMin  = Math.ceil(rawInMin  / 15) * 15;
+  const outMin = Math.floor(rawOutMin / 15) * 15;
+  const regStart = 8 * 60 + 15;   // 8:15
+  const regEnd   = 17 * 60 + 15;  // 17:15
+  const effStart = Math.max(inMin,  regStart);
+  const effEnd   = Math.min(outMin, regEnd);
+  if (effEnd <= effStart) return '0:00';
+  let totalMin = effEnd - effStart;
+  // 昼休憩控除（12:15〜13:15 をまたぐ場合）
+  const lunchS = 12 * 60 + 15;
+  const lunchE = 13 * 60 + 15;
+  if (effStart <= lunchS && effEnd >= lunchE) totalMin -= 60;
+  return totalMin > 0 ? fmtMin(totalMin) : '0:00';
+}
+
 function isCurrentlyWorking(rec) {
   const pairs = rec.pairs||[];
   return pairs.length > 0 && !!pairs[pairs.length-1].in && !pairs[pairs.length-1].out;
@@ -3813,7 +3839,7 @@ function renderWeekSummary() {
   days.forEach(({d,min,isToday})=>{
     const pct=Math.min(100,Math.round(min/maxMin*100));
     const col=document.createElement('div');
-    col.innerHTML=`<div class="week-day">${WEEKDAYS[d.getDay()]}</div><div class="week-bar-wrap"><div class="week-bar ${isToday?'today':min>0?'has-data':''}" style="height:${pct}%"></div></div><div class="week-hours">${min>0?fmtMin(min):'-'}</div>`;
+    col.innerHTML=`<div class="week-day">${WEEKDAYS[d.getDay()]}</div><div class="week-bar-wrap"><div class="week-bar ${isToday?'today':min>0?'has-data':''}" style="height:${pct}%"></div></div>`;
     grid.appendChild(col);
   });
 }
@@ -3859,24 +3885,27 @@ function renderHistory() {
     let statusHtml='',timesHtml='',durHtml='',otHtml='';
     if(pairs.length===0){
       statusHtml='<span class="record-status absent">欠勤</span>';
-      timesHtml='-- : --';
+      timesHtml='--:--（出勤）〜 --:--（退勤）';
     } else if(working){
       statusHtml='<span class="record-status working">勤務中</span>';
+      const inStr=fmtTime(pairs[0].in);
       if(pairs.length===1){
-        timesHtml=fmtTime(pairs[0].in)+' 〜 勤務中';
+        timesHtml=`${inStr}（出勤）〜 勤務中`;
       } else {
-        timesHtml=pairs.map((p,i)=>`<span style="color:var(--subtext);font-size:11px;">${i+1}.</span> ${fmtTime(p.in)} 〜 ${p.out?fmtTime(p.out):'<span style="color:var(--primary-dark)">勤務中</span>'}`).join('<br>');
+        timesHtml=`${inStr}（出勤）〜 勤務中<br>`+pairs.map((p,i)=>`<span style="color:var(--subtext);font-size:11px;">${i+1}.</span> ${fmtTime(p.in)} 〜 ${p.out?fmtTime(p.out):'<span style="color:var(--primary-dark)">勤務中</span>'}`).join('<br>');
       }
       durHtml=fmtMin(totalMin)+'（進行中）';
     } else {
       statusHtml='<span class="record-status complete">完了</span>';
+      const inStr=fmtTime(pairs[0].in);
+      const outStr=fmtTime(pairs[pairs.length-1].out);
+      const workH=calcWorkHoursFromPairs(pairs);
       if(pairs.length===1){
-        timesHtml=fmtTime(pairs[0].in)+' 〜 '+fmtTime(pairs[0].out);
-        durHtml=fmtMin(totalMin);
+        timesHtml=`${inStr}（出勤）〜 ${outStr}（退勤）`;
       } else {
-        timesHtml=pairs.map((p,i)=>`<span style="color:var(--subtext);font-size:11px;">${i+1}.</span> ${fmtTime(p.in)} 〜 ${fmtTime(p.out)}`).join('<br>');
-        durHtml=fmtMin(totalMin)+'（合計）';
+        timesHtml=`${inStr}（出勤）〜 ${outStr}（退勤）<br>`+pairs.map((p,i)=>`<span style="color:var(--subtext);font-size:11px;">${i+1}.</span> ${fmtTime(p.in)} 〜 ${fmtTime(p.out)}`).join('<br>');
       }
+      durHtml=workH?`${workH}（勤務時間）`:'';
     }
     const stLabels={pending:'審査中',approved:'承認済',rejected:'却下'};
     APP_TYPES.forEach(t=>{

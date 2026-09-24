@@ -3753,6 +3753,8 @@ function renderUpcomingApps() {
       const apps = isArr ? val : (val ? [val] : []);
       apps.forEach((app, arrIdx) => {
         if (!app || app.status === 'rejected') return;
+        // 休日出勤：提出日の行のみ表示（勤務日行への重複を除外）
+        if (t.key === 'holiday' && app.submittedDate && app.submittedDate !== dateKey) return;
         const targetDate = (t.key === 'holiday' && app.workDate) ? app.workDate : dateKey;
         if (targetDate < today) return;
         if (dateKey === today) return;

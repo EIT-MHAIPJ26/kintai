@@ -4286,12 +4286,20 @@ function renderApprovalTab() {
   if(!currentUser||!isAdmin(currentUser))return;
   let count=0;
   getUserNames().forEach(name=>{
-    Object.values(getUserRecords(name)).forEach(r=>{
+    Object.entries(getUserRecords(name)).forEach(([dateKey,r])=>{
       const rec=migrateRec(r);
       APP_TYPES.forEach(t=>{
         const val=rec[t.key];
-        if(Array.isArray(val)) val.forEach(a=>{ if(a?.status==='pending') count++; });
-        else if(val?.status==='pending') count++;
+        if(Array.isArray(val)) val.forEach(a=>{
+          if(a?.status!=='pending') return;
+          // 休日出勤：提出日の行のみカウント（重複除外）
+          if(t.key==='holiday' && a.submittedDate && a.submittedDate!==dateKey) return;
+          count++;
+        });
+        else if(val?.status==='pending'){
+          if(t.key==='holiday' && val.submittedDate && val.submittedDate!==dateKey){/* skip */}
+          else count++;
+        }
       });
       // 延長申請も集計
       if(rec.ot?.status==='approved' && rec.ot?.extension?.status==='pending') count++;

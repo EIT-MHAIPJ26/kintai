@@ -3994,6 +3994,8 @@ function renderMyApplications() {
         if (!app) return;
         // 当月 or 承認待ちのみ表示
         if (!inMonth && app.status !== 'pending') return;
+        // 休日出勤：提出日（submittedDate）の行だけ表示（勤務日行への重複を除外）
+        if (t.key === 'holiday' && app.submittedDate && app.submittedDate !== dateKey) return;
         let detail = '';
         if (t.key==='ot')           detail = '残業予定 '+app.plannedEnd+'まで';
         else if (t.key==='early')   detail = '早出 '+app.startTime+'〜8:00';

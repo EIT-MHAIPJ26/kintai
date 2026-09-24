@@ -4333,11 +4333,16 @@ function renderApprovalList() {
         const val=rec[t.key];
         if(Array.isArray(val)){
           val.forEach((app,idx)=>{
-            if(app?.status && (inWeek || app.status==='pending'))
-              allItems.push({kind:'app',name,dateKey,rec,type:t.key,typeInfo:t,app,idx});
+            if(!app?.status) return;
+            if(!inWeek && app.status!=='pending') return;
+            // 休日出勤：提出日の行のみ表示（勤務日行への重複を除外）
+            if(t.key==='holiday' && app.submittedDate && app.submittedDate!==dateKey) return;
+            allItems.push({kind:'app',name,dateKey,rec,type:t.key,typeInfo:t,app,idx});
           });
         } else if(val?.status && (inWeek || val.status==='pending')){
-          allItems.push({kind:'app',name,dateKey,rec,type:t.key,typeInfo:t,app:val,idx:null});
+          // 休日出勤：提出日の行のみ表示
+          if(t.key==='holiday' && val.submittedDate && val.submittedDate!==dateKey){/* skip */}
+          else allItems.push({kind:'app',name,dateKey,rec,type:t.key,typeInfo:t,app:val,idx:null});
         }
       });
       if(rec.ot?.extension?.status && (inWeek || rec.ot.extension.status==='pending')){

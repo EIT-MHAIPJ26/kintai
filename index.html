@@ -1337,6 +1337,19 @@ function fetchAllFromGAS(onDone, silent) {
           );
           if (rec.holiday.length === 0) rec.holiday = null;
         }
+        // crossHols で既にメモリに書き込んだ休日申請を GAS の上書きで消さない
+        const priorRec = data.records[name][dk];
+        if (priorRec && Array.isArray(priorRec.holiday) && priorRec.holiday.length > 0) {
+          if (!Array.isArray(rec.holiday) || rec.holiday.length === 0) {
+            rec.holiday = priorRec.holiday;
+          } else {
+            // 両方にある場合はマージ（重複除去）
+            priorRec.holiday.forEach(ph => {
+              const dup = rec.holiday.find(rh => rh.submittedDate === ph.submittedDate && rh.workDate === ph.workDate);
+              if (!dup) rec.holiday.push(ph);
+            });
+          }
+        }
         data.records[name][dk] = rec;
       });
     });

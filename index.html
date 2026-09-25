@@ -3753,8 +3753,8 @@ function renderUpcomingApps() {
       const apps = isArr ? val : (val ? [val] : []);
       apps.forEach((app, arrIdx) => {
         if (!app || app.status === 'rejected') return;
-        // 休日出勤：提出日の行のみ表示（勤務日行への重複を除外）
-        if (t.key === 'holiday' && app.submittedDate && app.submittedDate !== dateKey) return;
+        // 休日出勤：勤務日(workDate)の行だけ表示（提出日行への重複を除外）
+        if (t.key === 'holiday' && app.workDate && app.workDate !== dateKey) return;
         const targetDate = (t.key === 'holiday' && app.workDate) ? app.workDate : dateKey;
         if (targetDate < today) return;
         if (dateKey === today) return;
@@ -3996,8 +3996,8 @@ function renderMyApplications() {
         if (!app) return;
         // 当月 or 承認待ちのみ表示
         if (!inMonth && app.status !== 'pending') return;
-        // 休日出勤：提出日（submittedDate）の行だけ表示（勤務日行への重複を除外）
-        if (t.key === 'holiday' && app.submittedDate && app.submittedDate !== dateKey) return;
+        // 休日出勤：勤務日(workDate)の行だけ表示（提出日行への重複を除外）
+        if (t.key === 'holiday' && app.workDate && app.workDate !== dateKey) return;
         let detail = '';
         if (t.key==='ot')           detail = '残業予定 '+app.plannedEnd+'まで';
         else if (t.key==='early')   detail = '早出 '+app.startTime+'〜8:00';
@@ -4294,12 +4294,12 @@ function renderApprovalTab() {
         const val=rec[t.key];
         if(Array.isArray(val)) val.forEach(a=>{
           if(a?.status!=='pending') return;
-          // 休日出勤：提出日の行のみカウント（重複除外）
-          if(t.key==='holiday' && a.submittedDate && a.submittedDate!==dateKey) return;
+          // 休日出勤：勤務日(workDate)の行のみカウント（重複除外）
+          if(t.key==='holiday' && a.workDate && a.workDate!==dateKey) return;
           count++;
         });
         else if(val?.status==='pending'){
-          if(t.key==='holiday' && val.submittedDate && val.submittedDate!==dateKey){/* skip */}
+          if(t.key==='holiday' && val.workDate && val.workDate!==dateKey){/* skip */}
           else count++;
         }
       });
@@ -4345,8 +4345,8 @@ function renderApprovalList() {
           val.forEach((app,idx)=>{
             if(!app?.status) return;
             if(!inWeek && app.status!=='pending') return;
-            // 休日出勤：提出日の行のみ表示（勤務日行への重複を除外）
-            if(t.key==='holiday' && app.submittedDate && app.submittedDate!==dateKey) return;
+            // 休日出勤：勤務日(workDate)の行のみ表示（重複除外）
+            if(t.key==='holiday' && app.workDate && app.workDate!==dateKey) return;
             allItems.push({kind:'app',name,dateKey,rec,type:t.key,typeInfo:t,app,idx});
           });
         } else if(val?.status && (inWeek || val.status==='pending')){

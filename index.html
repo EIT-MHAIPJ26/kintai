@@ -3995,6 +3995,7 @@ function renderMyApplications() {
   const recs     = getUserRecords();
   const monthKey = todayKey().substring(0, 7); // YYYY-MM
   const items = [];
+  const seenHolidays = new Set(); // 休日出勤重複排除用
 
   Object.entries(recs).forEach(([dateKey, r]) => {
     const rec = migrateRec(r);
@@ -4007,18 +4008,29 @@ function renderMyApplications() {
       const apps = Array.isArray(val) ? val : (val ? [val] : []);
       apps.forEach((app, idx) => {
         if (!app) return;
+
+        // 休日出勤は workDate を表示日として使い、重複排除
+        if (t.key === 'holiday' && app.workDate) {
+          const holId = app.workDate + '_' + (app.submittedDate || dateKey);
+          if (seenHolidays.has(holId)) return;
+          seenHolidays.add(holId);
+          const wd = new Date(app.workDate.replace(/-/g, '/'));
+          const wDateStr = (wd.getMonth()+1)+'/'+wd.getDate()+'（'+WEEKDAYS[wd.getDay()]+'）';
+          const wInMonth = app.workDate.startsWith(monthKey);
+          if (!wInMonth && app.status !== 'pending') return;
+          const lunchStr = app.lunchTaken === false ? '　🍱昼休憩なし' : app.lunchTaken === true ? '　🍱昼休憩あり' : '';
+          const detail = '休日出勤 '+(app.startTime||'')+'〜'+(app.endTime||'')+(app.wantComp?' 振替希望':'')+lunchStr;
+          const appIdx = Array.isArray(val) ? idx : null;
+          items.push({ kind:'app', dateKey, dateStr:wDateStr, type:t.key, typeInfo:t, app, detail, appIdx });
+          return;
+        }
+
         // 当月 or 承認待ちのみ表示
         if (!inMonth && app.status !== 'pending') return;
-        // 休日出勤：勤務日(workDate)の行だけ表示（提出日行への重複を除外）
-        if (t.key === 'holiday' && app.workDate && app.workDate !== dateKey) return;
         let detail = '';
         if (t.key==='ot')           detail = '残業予定 '+app.plannedEnd+'まで';
         else if (t.key==='early')   detail = '早出 '+app.startTime+'〜8:00';
         else if (t.key==='paid')    detail = '有給 '+app.startTime+'〜'+app.endTime;
-        else if (t.key==='holiday') {
-          const lunchStr = app.lunchTaken === false ? '　🍱昼休憩なし' : app.lunchTaken === true ? '　🍱昼休憩あり' : '';
-          detail = '休日出勤 '+app.workDate+' '+(app.startTime||'')+'〜'+(app.endTime||'')+(app.wantComp?' 振替希望':'')+lunchStr;
-        }
         else if (t.key==='misc') {
           const lunchStr = app.lunchTaken === false ? '　🍱昼休憩なし' : app.lunchTaken === true ? '　🍱昼休憩あり' : '';
           if (app.subType === '振替') {
@@ -4348,6 +4360,7 @@ function renderApprovalList() {
 
   // ── 申請アイテム収集 ──────────────────────────────────────
   const allItems=[];
+  const seenHolidaysApproval = new Set(); // 休日出勤重複排除用（管理者）
   getUserNames().forEach(name=>{
     Object.entries(getUserRecords(name)).forEach(([dateKey,r])=>{
       const rec=migrateRec(r);
@@ -4357,15 +4370,30 @@ function renderApprovalList() {
         if(Array.isArray(val)){
           val.forEach((app,idx)=>{
             if(!app?.status) return;
+            // 休日出勤：workDate を基準に重複排除・表示判定
+            if(t.key==='holiday' && app.workDate){
+              const holId=name+'_'+app.workDate+'_'+(app.submittedDate||dateKey);
+              if(seenHolidaysApproval.has(holId)) return;
+              seenHolidaysApproval.add(holId);
+              const wInWeek=app.workDate>=weekStartKey && app.workDate<=weekEndKey;
+              if(!wInWeek && app.status!=='pending') return;
+              allItems.push({kind:'app',name,dateKey,displayDateKey:app.workDate,rec,type:t.key,typeInfo:t,app,idx});
+              return;
+            }
             if(!inWeek && app.status!=='pending') return;
-            // 休日出勤：勤務日(workDate)の行のみ表示（重複除外）
-            if(t.key==='holiday' && app.workDate && app.workDate!==dateKey) return;
-            allItems.push({kind:'app',name,dateKey,rec,type:t.key,typeInfo:t,app,idx});
+            allItems.push({kind:'app',name,dateKey,displayDateKey:dateKey,rec,type:t.key,typeInfo:t,app,idx});
           });
         } else if(val?.status && (inWeek || val.status==='pending')){
-          // 休日出勤：提出日の行のみ表示
-          if(t.key==='holiday' && val.submittedDate && val.submittedDate!==dateKey){/* skip */}
-          else allItems.push({kind:'app',name,dateKey,rec,type:t.key,typeInfo:t,app:val,idx:null});
+          if(t.key==='holiday' && val.workDate){
+            const holId=name+'_'+val.workDate+'_'+(val.submittedDate||dateKey);
+            if(seenHolidaysApproval.has(holId)) return;
+            seenHolidaysApproval.add(holId);
+            const wInWeek=val.workDate>=weekStartKey && val.workDate<=weekEndKey;
+            if(!wInWeek && val.status!=='pending') return;
+            allItems.push({kind:'app',name,dateKey,displayDateKey:val.workDate,rec,type:t.key,typeInfo:t,app:val,idx:null});
+          } else {
+            allItems.push({kind:'app',name,dateKey,displayDateKey:dateKey,rec,type:t.key,typeInfo:t,app:val,idx:null});
+          }
         }
       });
       if(rec.ot?.extension?.status && (inWeek || rec.ot.extension.status==='pending')){
@@ -4415,7 +4443,8 @@ function renderApprovalList() {
 
   allItems.forEach(entry=>{
     const {kind,name,dateKey}=entry;
-    const d=new Date(dateKey.replace(/-/g,'/'));
+    const dispKey=entry.displayDateKey||dateKey;
+    const d=new Date(dispKey.replace(/-/g,'/'));
     const dateStr=(d.getMonth()+1)+'/'+d.getDate()+'（'+WEEKDAYS[d.getDay()]+'）';
 
     if(kind==='app'){
@@ -4428,7 +4457,7 @@ function renderApprovalList() {
       else if(type==='otExt')   detailHtml=`${typeInfo.icon} <strong>${rec.ot?.plannedEnd}→${app.plannedEnd}</strong>まで延長`;
       else if(type==='early')   detailHtml=`${typeInfo.icon} 早出 <strong>${app.startTime}〜8:00</strong>${compBadge(app)}`;
       else if(type==='paid')    detailHtml=`${typeInfo.icon} 有給 <strong>${app.startTime}〜${app.endTime}</strong>${compBadge(app)}`;
-      else if(type==='holiday') detailHtml=`${typeInfo.icon} 休日出勤 <strong>${app.workDate}</strong> ${app.startTime||''}〜${app.endTime||''} ${app.wantComp?`振替希望：${app.compDate}${app.compTime?' '+app.compTime:''}`:'（振替なし）'}`;
+      else if(type==='holiday') detailHtml=`${typeInfo.icon} 休日出勤 <strong>${app.startTime||''}〜${app.endTime||''}</strong> ${app.wantComp?`振替希望：${app.compDate}${app.compTime?' '+app.compTime:''}`:'（振替なし）'}`;
       else if(type==='misc'){
         detailHtml=`${typeInfo.icon} ${app.subType}${app.endDate?' <strong>'+app.date+'〜'+app.endDate+'</strong>':app.startTime?' <strong>'+app.startTime+(app.endTime?'〜'+app.endTime:'')+'</strong>':''}${compBadge(app)}`;
       }

@@ -505,7 +505,14 @@
   <!-- 履歴 -->
   <div id="view-history" style="display:none">
     <div class="records-card">
-      <div class="card-title">📋 勤務履歴</div>
+      <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;">
+        <span>📋 勤務履歴</span>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <button onclick="changeHistoryMonth(-1)" style="padding:4px 10px;border:1.5px solid var(--border);border-radius:8px;background:white;font-size:14px;cursor:pointer;">‹</button>
+          <span id="historyMonthLabel" style="font-size:13px;font-weight:600;min-width:80px;text-align:center;"></span>
+          <button onclick="changeHistoryMonth(1)" id="historyNextBtn" style="padding:4px 10px;border:1.5px solid var(--border);border-radius:8px;background:white;font-size:14px;cursor:pointer;">›</button>
+        </div>
+      </div>
       <div id="historyList"></div>
     </div>
   </div>
@@ -4009,14 +4016,33 @@ function renderMonthView() {
   document.getElementById('statOt').textContent=otCount+' 回';
 }
 
+let historyMonth = todayKey().substring(0, 7); // YYYY-MM
+
+function changeHistoryMonth(delta) {
+  const [y, m] = historyMonth.split('-').map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  const newKey = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  // 未来月には進まない
+  if (newKey > todayKey().substring(0, 7)) return;
+  historyMonth = newKey;
+  renderHistory();
+}
+
 function renderHistory() {
   const recs=getUserRecords();
-  const monthKey=todayKey().substring(0,7); // YYYY-MM
+  const monthKey = historyMonth;
+  const currentMonthKey = todayKey().substring(0, 7);
   const keys=Object.keys(recs).filter(k=>k.startsWith(monthKey)).sort().reverse();
   const list=document.getElementById('historyList');
   list.innerHTML='';
-  // 当月ラベル
-  const now=new Date(); const mLbl=now.getFullYear()+'年'+(now.getMonth()+1)+'月分';
+  // 月ラベル更新
+  const [y, m] = monthKey.split('-').map(Number);
+  const mLbl = y + '年' + m + '月分';
+  const labelEl = document.getElementById('historyMonthLabel');
+  if (labelEl) labelEl.textContent = y + '年' + m + '月';
+  // 翌月ボタン：当月なら非活性
+  const nextBtn = document.getElementById('historyNextBtn');
+  if (nextBtn) nextBtn.style.opacity = monthKey >= currentMonthKey ? '0.3' : '1';
   list.innerHTML=`<div style="font-size:11px;color:var(--subtext);font-weight:600;margin-bottom:8px;padding-left:2px;">📅 ${mLbl}（${keys.length}件）</div>`;
   if(keys.length===0){list.innerHTML+=`<div class="empty-state">📭 ${mLbl}の記録はまだありません</div>`;return;}
   keys.forEach(key=>{
@@ -4868,6 +4894,11 @@ function switchTab(tab) {
   }
   if (tab === 'approval' && gasUrl) {
     fetchAllFromGAS(null, true); // タブ切り替えはサイレント
+  }
+  if (tab === 'history') {
+    // 履歴タブを開いたら当月にリセットして描画
+    historyMonth = todayKey().substring(0, 7);
+    renderHistory();
   }
 }
 

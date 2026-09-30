@@ -522,6 +522,34 @@
       </div>
       <div id="approvalList"></div>
     </div>
+
+    <!-- 管理者ツール：打刻修正 -->
+    <div class="records-card" style="margin-top:12px;">
+      <div class="card-title" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;" onclick="toggleAdminClockTool()">
+        <span>🛠️ 管理者ツール：打刻修正</span>
+        <span id="adminClockToolArrow" style="font-size:12px;color:var(--subtext);">▶ 開く</span>
+      </div>
+      <div id="adminClockTool" style="display:none;margin-top:12px;">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+          <div style="flex:1;min-width:120px;">
+            <div style="font-size:11px;color:var(--subtext);margin-bottom:4px;">メンバー</div>
+            <select id="adminClockUser" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;" onchange="loadAdminClockData()">
+              <option value="">選択してください</option>
+            </select>
+          </div>
+          <div style="flex:1;min-width:120px;">
+            <div style="font-size:11px;color:var(--subtext);margin-bottom:4px;">日付</div>
+            <input type="date" id="adminClockDate" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;box-sizing:border-box;" onchange="loadAdminClockData()" />
+          </div>
+        </div>
+        <div id="adminClockPairs" style="margin-bottom:10px;"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button onclick="addAdminClockPair()" style="padding:8px 16px;border-radius:10px;border:1.5px solid var(--border);background:white;font-size:13px;cursor:pointer;">＋ ペア追加</button>
+          <button onclick="saveAdminClockData()" style="padding:8px 20px;border-radius:10px;border:none;background:var(--accent);color:white;font-size:13px;font-weight:700;cursor:pointer;">💾 保存・同期</button>
+        </div>
+        <div id="adminClockMsg" style="font-size:12px;color:var(--subtext);margin-top:8px;"></div>
+      </div>
+    </div>
   </div>
 
   <button class="export-btn" onclick="exportCSV()">📥 CSVエクスポート</button>
@@ -648,8 +676,11 @@
 <div class="modal-overlay" id="modalPaid" onclick="closeModalBg(event,'modalPaid')">
   <div class="modal">
     <h3>📅 有給申請</h3>
-    <label>対象日</label>
-    <input type="date" id="paidDate"/>
+    <label>開始日</label>
+    <input type="date" id="paidDate" onchange="updatePaidDayCount()"/>
+    <label>終了日（連日の場合は変更）</label>
+    <input type="date" id="paidEndDate" onchange="updatePaidDayCount()"/>
+    <div id="paidDayCount" style="font-size:12px;color:var(--accent);font-weight:600;margin-top:4px;min-height:18px;"></div>
     <label>開始時刻</label>
     <select id="paidStartTime" onchange="updatePaidEndTimes()"></select>
     <label>終了時刻</label>
@@ -728,10 +759,11 @@
     <div id="miscDateGroup">
       <label id="miscDateLabel">対象日</label>
       <div style="display:flex;gap:8px;align-items:center;">
-        <input type="date" id="miscDate" style="flex:1;">
+        <input type="date" id="miscDate" style="flex:1;" onchange="updateMiscFields()">
         <span id="miscDateRangeSep" style="color:var(--subtext);display:none;">〜</span>
-        <input type="date" id="miscEndDate" style="flex:1;display:none;">
+        <input type="date" id="miscEndDate" style="flex:1;display:none;" onchange="updateMiscFields()">
       </div>
+      <div id="miscDayCount" style="font-size:12px;color:var(--accent);font-weight:600;margin-top:4px;min-height:18px;"></div>
     </div>
     <div id="miscTimeGroup">
       <label id="miscTimeLabel">時間（開始〜終了）</label>
@@ -2585,31 +2617,84 @@ function updatePaidEndTimes() {
   buildPaidTimes('paidEndTime', document.getElementById('paidStartTime').value);
 }
 
+// 平日のみの日付配列を返す（土日除く）
+function getBusinessDays_(startKey, endKey) {
+  const result = [];
+  const d = new Date(startKey.replace(/-/g, '/'));
+  const end = new Date((endKey || startKey).replace(/-/g, '/'));
+  while (d <= end) {
+    const dow = d.getDay();
+    if (dow !== 0 && dow !== 6) {
+      result.push(d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'));
+    }
+    d.setDate(d.getDate() + 1);
+  }
+  return result;
+}
+
+function updatePaidDayCount() {
+  const s = document.getElementById('paidDate').value;
+  const e = document.getElementById('paidEndDate').value;
+  const preview = document.getElementById('paidDayCount');
+  if (!s) { preview.textContent = ''; return; }
+  const endKey = (e && e >= s) ? e : s;
+  if (endKey === s) { preview.textContent = ''; return; }
+  const days = getBusinessDays_(s, endKey);
+  preview.textContent = days.length + '日間（土日を除く平日）';
+}
+
 function showPaidModal() {
   if (!currentUser) return;
-  document.getElementById('paidDate').value = todayKey();
-  document.getElementById('paidReason').value = '';
+  document.getElementById('paidDate').value    = todayKey();
+  document.getElementById('paidEndDate').value = todayKey();
+  document.getElementById('paidReason').value  = '';
+  document.getElementById('paidDayCount').textContent = '';
   buildPaidTimes('paidStartTime', null);
   updatePaidEndTimes();
   document.getElementById('modalPaid').classList.add('show');
 }
 
 function submitPaid() {
-  const date      = document.getElementById('paidDate').value;
+  const startDate = document.getElementById('paidDate').value;
+  const endDate   = document.getElementById('paidEndDate').value || startDate;
   const startTime = document.getElementById('paidStartTime').value;
   const endTime   = document.getElementById('paidEndTime').value;
   const reason    = document.getElementById('paidReason').value.trim();
-  if (!date)    { showToast('対象日を選択してください'); return; }
-  if (!endTime) { showToast('終了時刻を選択してください'); return; }
-  if (!reason)  { showToast('理由を入力してください'); return; }
-  const rec = getRecByKey(currentUser, date);
-  if (!Array.isArray(rec.paid)) rec.paid = rec.paid ? [rec.paid] : [];
-  const dup = rec.paid.find(p => p.status !== 'rejected' && p.startTime === startTime && p.endTime === endTime);
-  if (dup) { showToast('同じ時間帯の有給申請があります'); return; }
-  rec.paid.push({ startTime, endTime, reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' });
+  if (!startDate) { showToast('開始日を選択してください'); return; }
+  if (!endTime)   { showToast('終了時刻を選択してください'); return; }
+  if (endDate < startDate) { showToast('終了日は開始日以降を選択してください'); return; }
+
+  const dates = getBusinessDays_(startDate, endDate);
+  if (dates.length === 0) { showToast('申請できる平日がありません（土日のみの期間）'); return; }
+
+  const appliedAt = Date.now();
+  const rangeStart = dates[0];
+  const rangeEnd   = dates[dates.length - 1];
+  const isRange    = dates.length > 1;
+
+  dates.forEach(date => {
+    const rec = getRecByKey(currentUser, date);
+    if (!Array.isArray(rec.paid)) rec.paid = rec.paid ? [rec.paid] : [];
+    const dup = rec.paid.find(p => p.status !== 'rejected' && p.startTime === startTime && p.endTime === endTime);
+    if (!dup) {
+      rec.paid.push({ startTime, endTime, reason, status:'pending', appliedAt,
+        approvedBy:null, approvedAt:null, comment:'',
+        ...(isRange ? { rangeStart, rangeEnd } : {}) });
+    }
+  });
   saveData(); renderAll(); hideModal('modalPaid');
-  notifyAdminsViaGAS('paid', startTime+'〜'+endTime, date);
-  showToast('📅 有給申請を送信しました（'+startTime+'〜'+endTime+'）');
+
+  // 通知は1回（範囲全体）
+  const detail = isRange ? rangeStart+'〜'+rangeEnd+'（'+dates.length+'日間）'+startTime+'〜'+endTime
+                         : startTime+'〜'+endTime + (reason ? '　'+reason : '');
+  notifyAdminsViaGAS('paid', detail, rangeStart);
+
+  // 各日をGASに同期
+  dates.forEach(date => syncRecordToGAS(currentUser, date));
+
+  const msg = isRange ? `📅 有給申請を送信しました（${rangeStart}〜${rangeEnd}・${dates.length}日間）`
+                      : `📅 有給申請を送信しました（${startTime}〜${endTime}）`;
+  showToast(msg);
 }
 
 // ============================================================
@@ -3039,8 +3124,9 @@ function toggleMiscComp() {
 
 function showMiscModal() {
   if (!currentUser) return;
-  document.getElementById('miscDate').value = todayKey();
+  document.getElementById('miscDate').value    = todayKey();
   document.getElementById('miscEndDate').value = todayKey();
+  const pc = document.getElementById('miscDayCount'); if (pc) pc.textContent = '';
   document.getElementById('miscSubType').value = '遅刻';
   buildTimeSel15('miscStartTime', true, '');
   buildTimeSel15('miscEndTime',   true, '');
@@ -3069,19 +3155,31 @@ function updateMiscFields() {
   // 昼休憩はその他のみ表示
   lunchGroup.style.display = subType === 'その他' ? '' : 'none';
 
-  if (subType === '特別休暇') {
+  if (subType === '特別休暇' || subType === '欠勤') {
     dateGroup.style.display  = '';
-    timeGroup.style.display  = 'none';
+    timeGroup.style.display  = subType === '欠勤' ? 'none' : 'none';
     compGroup.style.display  = 'none';
     dateLabel.textContent    = '対象期間';
     endDate.style.display    = '';
     sep.style.display        = '';
+    // 日数プレビューを更新
+    const sd = document.getElementById('miscDate').value;
+    const ed = document.getElementById('miscEndDate').value || sd;
+    const preview = document.getElementById('miscDayCount');
+    if (preview) {
+      if (sd && ed && sd !== ed) {
+        const days = getBusinessDays_(sd, ed);
+        preview.textContent = days.length + '日間（平日のみ）';
+      } else { preview.textContent = ''; }
+    }
   } else {
     dateGroup.style.display  = '';
     timeGroup.style.display  = '';
     dateLabel.textContent    = '対象日';
     endDate.style.display    = 'none';
     sep.style.display        = 'none';
+    const preview2 = document.getElementById('miscDayCount');
+    if (preview2) preview2.textContent = '';
     if (subType === '遅刻') {
       timeLabel.textContent  = '時間（※遅刻対象となる時間）';
       compGroup.style.display = '';
@@ -3099,11 +3197,12 @@ function submitMisc() {
   const subType   = document.getElementById('miscSubType').value;
   const reason    = document.getElementById('miscReason').value.trim();
   const date      = document.getElementById('miscDate').value;
-  const endDate   = subType === '特別休暇' ? document.getElementById('miscEndDate').value : '';
+  const isRange   = subType === '特別休暇' || subType === '欠勤';
+  const endDate   = isRange ? (document.getElementById('miscEndDate').value || date) : '';
   const startTime = document.getElementById('miscStartTime').value;
   const endTime   = document.getElementById('miscEndTime').value;
   if (!date)   { showToast('対象日を選択してください'); return; }
-  if (subType === '特別休暇' && !endDate) { showToast('終了日を選択してください'); return; }
+  if (isRange && endDate && endDate < date) { showToast('終了日は開始日以降を選択してください'); return; }
   if (!reason) { showToast('理由・内容を入力してください'); return; }
 
   // 遅刻・早退の振替希望
@@ -3119,16 +3218,41 @@ function submitMisc() {
   const lunchVal    = subType === 'その他' ? document.getElementById('miscLunchTaken').value : '';
   const lunchTaken  = lunchVal === 'yes' ? true : lunchVal === 'no' ? false : null;
 
-  const rec = getRecByKey(currentUser, date);
-  if (!Array.isArray(rec.misc)) rec.misc = [];
-  rec.misc.push({ subType, date, endDate, startTime, endTime, wantComp, compDate: wantComp ? compDate : '', compTimeStart: wantComp ? compTimeStart : '', compTimeEnd: wantComp ? compTimeEnd : '', reason, lunchTaken, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' });
-  saveData(); renderAll(); hideModal('modalMisc');
-  const dateStr  = endDate ? date+'〜'+endDate : date;
-  const timeStr  = startTime ? ' '+startTime+(endTime?'〜'+endTime:'') : '';
-  const compStr  = wantComp ? `　振替希望：${compDate}${compTimeStart?' '+compTimeStart+(compTimeEnd?'〜'+compTimeEnd:''):''}` : '';
-  const detail   = subType + ' ' + dateStr + timeStr + compStr + '　' + reason;
-  notifyAdminsViaGAS('misc', detail, date);
-  showToast('📋 その他申請（'+subType+'）を送信しました');
+  const appliedAt = Date.now();
+
+  if (isRange && endDate && endDate !== date) {
+    // 特別休暇・欠勤：日数分のレコードを作成
+    const dates = getBusinessDays_(date, endDate);
+    if (dates.length === 0) { showToast('申請できる平日がありません（土日のみの期間）'); return; }
+    const rangeStart = dates[0];
+    const rangeEnd   = dates[dates.length - 1];
+    dates.forEach(d => {
+      const rec = getRecByKey(currentUser, d);
+      if (!Array.isArray(rec.misc)) rec.misc = [];
+      rec.misc.push({ subType, date: d, endDate:'', startTime:'', endTime:'',
+        wantComp:false, compDate:'', compTimeStart:'', compTimeEnd:'',
+        reason, lunchTaken:null, status:'pending', appliedAt,
+        approvedBy:null, approvedAt:null, comment:'', rangeStart, rangeEnd });
+    });
+    saveData(); renderAll(); hideModal('modalMisc');
+    const detail = subType + ' ' + rangeStart + '〜' + rangeEnd + '（' + dates.length + '日間）　' + reason;
+    notifyAdminsViaGAS('misc', detail, rangeStart);
+    dates.forEach(d => syncRecordToGAS(currentUser, d));
+    showToast(`📋 ${subType}（${rangeStart}〜${rangeEnd}・${dates.length}日間）を送信しました`);
+  } else {
+    // 単日
+    const rec = getRecByKey(currentUser, date);
+    if (!Array.isArray(rec.misc)) rec.misc = [];
+    rec.misc.push({ subType, date, endDate:'', startTime, endTime, wantComp,
+      compDate: wantComp ? compDate : '', compTimeStart: wantComp ? compTimeStart : '', compTimeEnd: wantComp ? compTimeEnd : '',
+      reason, lunchTaken, status:'pending', appliedAt, approvedBy:null, approvedAt:null, comment:'' });
+    saveData(); renderAll(); hideModal('modalMisc');
+    const timeStr  = startTime ? ' '+startTime+(endTime?'〜'+endTime:'') : '';
+    const compStr  = wantComp ? `　振替希望：${compDate}${compTimeStart?' '+compTimeStart+(compTimeEnd?'〜'+compTimeEnd:''):''}` : '';
+    const detail   = subType + ' ' + date + timeStr + compStr + '　' + reason;
+    notifyAdminsViaGAS('misc', detail, date);
+    showToast('📋 その他申請（'+subType+'）を送信しました');
+  }
 }
 
 // ============================================================
@@ -4030,7 +4154,7 @@ function renderMyApplications() {
         let detail = '';
         if (t.key==='ot')           detail = '残業予定 '+app.plannedEnd+'まで';
         else if (t.key==='early')   detail = '早出 '+app.startTime+'〜8:00';
-        else if (t.key==='paid')    detail = '有給 '+app.startTime+'〜'+app.endTime;
+        else if (t.key==='paid')    detail = '有給 '+app.startTime+'〜'+app.endTime+(app.rangeStart && app.rangeEnd && app.rangeStart!==app.rangeEnd ? '（'+app.rangeStart+'〜'+app.rangeEnd+'）' : '');
         else if (t.key==='misc') {
           const lunchStr = app.lunchTaken === false ? '　🍱昼休憩なし' : app.lunchTaken === true ? '　🍱昼休憩あり' : '';
           if (app.subType === '振替') {
@@ -4307,6 +4431,134 @@ function renderMemberStatus() {
       </div>`;
     grid.appendChild(item);
   });
+}
+
+// ============================================================
+//  管理者打刻修正ツール
+// ============================================================
+function toggleAdminClockTool() {
+  const tool  = document.getElementById('adminClockTool');
+  const arrow = document.getElementById('adminClockToolArrow');
+  if (tool.style.display === 'none') {
+    tool.style.display = 'block';
+    arrow.textContent = '▼ 閉じる';
+    // メンバーリストを更新
+    const sel = document.getElementById('adminClockUser');
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">選択してください</option>';
+    getUserNames().forEach(nm => {
+      const o = document.createElement('option');
+      o.value = nm; o.textContent = nm;
+      if (nm === cur) o.selected = true;
+      sel.appendChild(o);
+    });
+    // 日付を今日にデフォルト設定
+    if (!document.getElementById('adminClockDate').value) {
+      document.getElementById('adminClockDate').value = todayKey();
+    }
+    loadAdminClockData();
+  } else {
+    tool.style.display = 'none';
+    arrow.textContent = '▶ 開く';
+  }
+}
+
+function loadAdminClockData() {
+  const name    = document.getElementById('adminClockUser').value;
+  const dateKey = document.getElementById('adminClockDate').value;
+  const container = document.getElementById('adminClockPairs');
+  if (!name || !dateKey) { container.innerHTML = ''; return; }
+  const rec   = getRecByKey(name, dateKey);
+  const pairs = Array.isArray(rec.pairs) ? rec.pairs : [];
+  renderAdminClockPairs(pairs);
+  document.getElementById('adminClockMsg').textContent = '';
+}
+
+function renderAdminClockPairs(pairs) {
+  const container = document.getElementById('adminClockPairs');
+  if (pairs.length === 0) {
+    container.innerHTML = '<div style="font-size:13px;color:var(--subtext);margin-bottom:6px;">打刻データなし（ペア追加ボタンで追加）</div>';
+    container._pairs = [];
+    return;
+  }
+  container._pairs = pairs.map(p => ({ in: p.in || '', out: p.out || '' }));
+  container.innerHTML = pairs.map((p, i) => {
+    const inVal  = p.in  ? new Date(p.in ).toTimeString().slice(0,5) : '';
+    const outVal = p.out ? new Date(p.out).toTimeString().slice(0,5) : '';
+    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+      <span style="font-size:12px;color:var(--subtext);min-width:20px;">${i+1}.</span>
+      <input type="time" value="${inVal}" placeholder="出勤" id="adminIn_${i}"
+        style="flex:1;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;"
+        onchange="adminPairChanged()" />
+      <span style="font-size:12px;color:var(--subtext);">〜</span>
+      <input type="time" value="${outVal}" placeholder="退勤" id="adminOut_${i}"
+        style="flex:1;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;"
+        onchange="adminPairChanged()" />
+      <button onclick="removeAdminPair(${i})" style="padding:4px 8px;border:1px solid var(--danger);border-radius:6px;background:white;color:var(--danger);font-size:12px;cursor:pointer;">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function adminPairChanged() {
+  // 入力値をメモリに反映（保存ボタン押下時に収集）
+}
+
+function addAdminClockPair() {
+  const container = document.getElementById('adminClockPairs');
+  const pairs = getAdminCurrentPairs();
+  pairs.push({ in: '', out: '' });
+  renderAdminClockPairs(pairs);
+}
+
+function removeAdminPair(idx) {
+  const pairs = getAdminCurrentPairs();
+  pairs.splice(idx, 1);
+  renderAdminClockPairs(pairs);
+}
+
+function getAdminCurrentPairs() {
+  const container = document.getElementById('adminClockPairs');
+  const pairs = [];
+  let i = 0;
+  while (document.getElementById('adminIn_' + i) !== null) {
+    const inEl  = document.getElementById('adminIn_'  + i);
+    const outEl = document.getElementById('adminOut_' + i);
+    pairs.push({ in: inEl.value, out: outEl.value });
+    i++;
+  }
+  return pairs;
+}
+
+function saveAdminClockData() {
+  const name    = document.getElementById('adminClockUser').value;
+  const dateKey = document.getElementById('adminClockDate').value;
+  const msg     = document.getElementById('adminClockMsg');
+  if (!name || !dateKey) { msg.textContent = 'メンバーと日付を選択してください'; return; }
+
+  const rawPairs = getAdminCurrentPairs();
+  // HH:MM → ISO datetime 文字列に変換
+  const convertedPairs = rawPairs
+    .filter(p => p.in || p.out)
+    .map(p => {
+      const toISO = (hhmm) => {
+        if (!hhmm) return '';
+        const [h, m] = hhmm.split(':').map(Number);
+        const d = new Date(dateKey.replace(/-/g, '/'));
+        d.setHours(h, m, 0, 0);
+        return d.toISOString();
+      };
+      return { in: toISO(p.in), out: toISO(p.out) };
+    });
+
+  const rec = getRecByKey(name, dateKey);
+  rec.pairs = convertedPairs;
+  rec.updatedAt = Date.now();
+  saveData();
+  syncRecordToGAS(name, dateKey);
+  msg.style.color = 'var(--accent)';
+  msg.textContent = '✅ 保存・GAS同期しました（' + name + ' / ' + dateKey + '）';
+  renderAdminClockPairs(convertedPairs);
+  if (name === currentUser && dateKey === todayKey()) renderAll();
 }
 
 function renderApprovalTab() {

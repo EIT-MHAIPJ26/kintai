@@ -753,7 +753,7 @@
       <option value="早退">早退</option>
       <option value="特別休暇">特別休暇</option>
       <option value="欠勤">欠勤</option>
-      <option value="その他">その他</option>
+      <option value="途中外出">途中外出</option>
     </select>
     <!-- 通常の日付・時間グループ -->
     <div id="miscDateGroup">
@@ -3153,7 +3153,7 @@ function updateMiscFields() {
   const lunchGroup = document.getElementById('miscLunchGroup');
 
   // 昼休憩はその他のみ表示
-  lunchGroup.style.display = subType === 'その他' ? '' : 'none';
+  lunchGroup.style.display = subType === '途中外出' ? '' : 'none';
 
   if (subType === '特別休暇' || subType === '欠勤') {
     dateGroup.style.display  = '';
@@ -3187,7 +3187,7 @@ function updateMiscFields() {
       timeLabel.textContent  = '時間（※早退対象となる時間）';
       compGroup.style.display = '';
     } else {
-      timeLabel.textContent  = subType === 'その他' ? '時間（任意）' : '時間（任意）';
+      timeLabel.textContent  = subType === '途中外出' ? '時間（任意）' : '時間（任意）';
       compGroup.style.display = 'none';
     }
   }
@@ -3215,7 +3215,7 @@ function submitMisc() {
     if (wantComp && !compDate) { showToast('振替希望日を選択してください'); return; }
   }
 
-  const lunchVal    = subType === 'その他' ? document.getElementById('miscLunchTaken').value : '';
+  const lunchVal    = subType === '途中外出' ? document.getElementById('miscLunchTaken').value : '';
   const lunchTaken  = lunchVal === 'yes' ? true : lunchVal === 'no' ? false : null;
 
   const appliedAt = Date.now();

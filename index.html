@@ -3137,8 +3137,9 @@ function updateMiscFields() {
 
   if (subType === '特別休暇' || subType === '欠勤') {
     dateGroup.style.display  = '';
-    timeGroup.style.display  = subType === '欠勤' ? 'none' : 'none';
+    timeGroup.style.display  = '';
     compGroup.style.display  = 'none';
+    timeLabel.textContent    = '時間（任意）';
     dateLabel.textContent    = '対象期間';
     endDate.style.display    = '';
     sep.style.display        = '';
@@ -3209,7 +3210,7 @@ function submitMisc() {
     dates.forEach(d => {
       const rec = getRecByKey(currentUser, d);
       if (!Array.isArray(rec.misc)) rec.misc = [];
-      rec.misc.push({ subType, date: d, endDate:'', startTime:'', endTime:'',
+      rec.misc.push({ subType, date: d, endDate:'', startTime, endTime,
         wantComp:false, compDate:'', compTimeStart:'', compTimeEnd:'',
         reason, lunchTaken:null, status:'pending', appliedAt,
         approvedBy:null, approvedAt:null, comment:'', rangeStart, rangeEnd });

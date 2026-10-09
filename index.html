@@ -234,10 +234,10 @@
     .modal input:focus,.modal select:focus,.modal textarea:focus{outline:none;border-color:var(--primary);}
     .modal textarea{resize:none;height:76px;}
     .modal-buttons{display:flex;gap:10px;margin-top:14px;}
-    .btn-confirm{flex:1;padding:13px;background:var(--primary);color:white;border:none;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;}
+    .btn-confirm{flex:1;padding:13px;background:var(--primary);color:white;border:none;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;min-height:50px;touch-action:manipulation;}
     .btn-confirm.purple{background:var(--purple);}
     .btn-confirm.blue{background:var(--blue);}
-    .btn-cancel{padding:13px 18px;background:var(--bg);color:var(--subtext);border:none;border-radius:12px;font-size:14px;cursor:pointer;}
+    .btn-cancel{flex:1;padding:13px;background:var(--bg);color:var(--subtext);border:none;border-radius:12px;font-size:14px;cursor:pointer;min-height:50px;touch-action:manipulation;}
     /* 全ボタン共通：カーソルとクリック領域 */
     button { cursor: pointer; }
     button * { pointer-events: none; }

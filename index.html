@@ -1363,12 +1363,44 @@ function fetchAllFromGAS(onDone, silent) {
           }
         }
         data.records[name][dk] = rec;
+        // ── 現ユーザーの過去日付で、ローカルに pending misc があるが GAS にない場合は自動再送 ──
+        // （初回同期失敗などでGASにデータが届かなかったときのリカバリ）
+        if (name === currentUser && dk < today && gasUrl) {
+          const localPendingMisc = priorRec && Array.isArray(priorRec.misc)
+            ? priorRec.misc.filter(function(m){ return m && m.status === 'pending'; })
+            : [];
+          const gasMisc = Array.isArray(rec.misc) ? rec.misc : [];
+          if (localPendingMisc.length > 0 && gasMisc.length === 0) {
+            // ローカルの pending misc を GAS に反映されていなかった → ローカルを保持しGASに再送
+            data.records[name][dk].misc = priorRec.misc;
+            (function(syncDk){ setTimeout(function(){ syncRecordToGAS(name, syncDk); }, 1500); })(dk);
+          }
+        }
       });
     });
     // パスワードをGASからマージ（クラウドが正）
     if (json.passwords && typeof json.passwords === 'object') {
       if (!data.passwords) data.passwords = {};
       Object.assign(data.passwords, json.passwords);
+    }
+    // ── GASに行がない過去日付のpending miscをGASに自動再送 ──
+    // （GAS側に行が存在しない場合、forEach で対象日付に到達しないのでここで補完）
+    if (currentUser && gasUrl) {
+      const gasNames = json.records || {};
+      const gasUserRecs = gasNames[currentUser] || {};
+      const localUserRecs = data.records[currentUser] || {};
+      Object.keys(localUserRecs).forEach(function(dk) {
+        if (dk >= today) return; // 今日以降は対象外
+        if (gasUserRecs[dk]) return; // GASに行がある場合はfetchAllFromGASの処理済み
+        const localRec = localUserRecs[dk];
+        const localPendingMisc = localRec && Array.isArray(localRec.misc)
+          ? localRec.misc.filter(function(m){ return m && m.status === 'pending'; })
+          : [];
+        if (localPendingMisc.length > 0) {
+          // GASに行がないがローカルにpending miscがある → GASに新規作成
+          (function(syncDk){ setTimeout(function(){ syncRecordToGAS(currentUser, syncDk); }, 2000); })(dk);
+        }
+      });
     }
     saveData(); renderAll();
     updateSyncIndicator('ok');

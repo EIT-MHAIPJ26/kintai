@@ -2271,10 +2271,10 @@ function showChangeReqModal(appType, dateKey, idx) {
     endFixed.style.display = 'none';
     sep.style.display      = '';
   } else if (appType === 'misc') {
-    const hasTime = ['遅刻','早退'].includes(app.subType);
+    const hasTime = ['遅刻','早退','特別休暇','欠勤','途中外出'].includes(app.subType);
     document.getElementById('changeReqTimeRow').style.display = hasTime ? '' : 'none';
     if (hasTime) {
-      timeLbl.textContent = '変更後の時間帯';
+      timeLbl.textContent = '変更後の時間帯（任意）';
       buildTimeSel15('changeReqStartTime', true, app.startTime||'');
       buildTimeSel15('changeReqEndTime',   true, app.endTime||'');
       endSel.style.display   = '';
@@ -3232,6 +3232,7 @@ function submitMisc() {
     const compStr  = wantComp ? `　振替希望：${compDate}${compTimeStart?' '+compTimeStart+(compTimeEnd?'〜'+compTimeEnd:''):''}` : '';
     const detail   = subType + ' ' + date + timeStr + compStr + '　' + reason;
     notifyAdminsViaGAS('misc', detail, date);
+    syncRecordToGAS(currentUser, date); // 過去日付含め確実に記録（リトライ機能付き）
     showToast('📋 その他申請（'+subType+'）を送信しました');
   }
 }

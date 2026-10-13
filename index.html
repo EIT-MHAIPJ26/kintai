@@ -734,6 +734,7 @@
       <option value="特別休暇">特別休暇</option>
       <option value="欠勤">欠勤</option>
       <option value="途中外出">途中外出</option>
+      <option value="振替出勤">振替出勤</option>
     </select>
     <!-- 通常の日付・時間グループ -->
     <div id="miscDateGroup">
@@ -2303,7 +2304,7 @@ function showChangeReqModal(appType, dateKey, idx) {
     endFixed.style.display = 'none';
     sep.style.display      = '';
   } else if (appType === 'misc') {
-    const hasTime = ['遅刻','早退','特別休暇','欠勤','途中外出'].includes(app.subType);
+    const hasTime = ['遅刻','早退','特別休暇','欠勤','途中外出','振替出勤'].includes(app.subType);
     document.getElementById('changeReqTimeRow').style.display = hasTime ? '' : 'none';
     if (hasTime) {
       timeLbl.textContent = '変更後の時間帯（任意）';
@@ -3199,6 +3200,10 @@ function updateMiscFields() {
     } else if (subType === '早退') {
       timeLabel.textContent  = '時間（※早退対象となる時間）';
       compGroup.style.display = '';
+    } else if (subType === '振替出勤') {
+      dateLabel.textContent  = '出勤日';
+      timeLabel.textContent  = '出勤時間';
+      compGroup.style.display = '';
     } else {
       timeLabel.textContent  = subType === '途中外出' ? '時間（任意）' : '時間（任意）';
       compGroup.style.display = 'none';
@@ -3218,9 +3223,9 @@ function submitMisc() {
   if (isRange && endDate && endDate < date) { showToast('終了日は開始日以降を選択してください'); return; }
   if (!reason) { showToast('理由・内容を入力してください'); return; }
 
-  // 遅刻・早退の振替希望
+  // 遅刻・早退・振替出勤の振替希望
   let wantComp = false, compDate = '', compTimeStart = '', compTimeEnd = '';
-  if (subType === '遅刻' || subType === '早退') {
+  if (subType === '遅刻' || subType === '早退' || subType === '振替出勤') {
     wantComp      = document.getElementById('miscCompYes').checked;
     compDate      = document.getElementById('miscCompDate').value;
     compTimeStart = document.getElementById('miscCompTimeStart').value;

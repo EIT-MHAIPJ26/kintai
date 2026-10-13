@@ -3983,9 +3983,27 @@ function renderUpcomingApps() {
     });
   });
 
-  items.sort((a,b) => a.targetDate.localeCompare(b.targetDate));
+  // 休日出勤：同じworkDateで複数エントリがある場合は最も新しい（ステータス優先: approved > pending > rejected）ものだけ残す
+  const holMap = {};
+  items.forEach(item => {
+    if (item.typeInfo.key !== 'holiday') return;
+    const wk = item.app.workDate || item.targetDate;
+    const existing = holMap[wk];
+    const statusRank = { approved: 2, pending: 1, rejected: 0 };
+    const itemRank = statusRank[item.app.status] ?? 0;
+    const existRank = existing ? (statusRank[existing.app.status] ?? 0) : -1;
+    if (!existing || itemRank > existRank) holMap[wk] = item;
+  });
+  // 重複を除去（休日出勤はholMapの値だけ残す）
+  const deduped = items.filter(item => {
+    if (item.typeInfo.key !== 'holiday') return true;
+    const wk = item.app.workDate || item.targetDate;
+    return holMap[wk] === item;
+  });
 
-  if (items.length === 0) { upEl.style.display='none'; return; }
+  deduped.sort((a,b) => a.targetDate.localeCompare(b.targetDate));
+
+  if (deduped.length === 0) { upEl.style.display='none'; return; }
 
   const stIcons  = { pending:'⏳', approved:'✅' };
   const stLabels = { pending:'承認待ち', approved:'承認済み' };
@@ -3998,7 +4016,7 @@ function renderUpcomingApps() {
   const btnBase = 'font-size:11px;padding:2px 9px;border-radius:6px;background:transparent;cursor:pointer;white-space:nowrap;';
   const changeableTypes = ['early','paid','misc'];
 
-  items.forEach(({ targetDate, dateKey, typeInfo, app, detail, appIdx }) => {
+  deduped.forEach(({ targetDate, dateKey, typeInfo, app, detail, appIdx }) => {
     const d = new Date(targetDate.replace(/-/g,'/'));
     const dateStr = (d.getMonth()+1)+'/'+d.getDate()+'（'+WEEKDAYS[d.getDay()]+'）';
     const idxArg = appIdx === null ? 'null' : appIdx;

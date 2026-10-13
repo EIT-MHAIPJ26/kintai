@@ -2936,8 +2936,11 @@ function loadCorrAppCurrentRecord() {
         summary: `${h.workDate} ${h.startTime||''}〜${h.endTime||''}` }));
     } else if (appType === 'misc') {
       const arr = Array.isArray(rec.misc) ? rec.misc : (rec.misc ? [rec.misc] : []);
-      arr.forEach((m, i) => _corrAppEntries.push({ dateKey, dateStr, app: m, appIdx: i,
-        summary: `${m.subType}${m.startTime?' '+m.startTime:''}` }));
+      arr.forEach((m, i) => {
+        if (!m || m.status === 'deleted') return; // 削除済みは対象外
+        _corrAppEntries.push({ dateKey, dateStr, app: m, appIdx: i,
+          summary: `${m.subType}${m.startTime?' '+m.startTime:''}` });
+      });
     }
   });
 
@@ -3827,7 +3830,7 @@ function renderStatus() {
   function renderMultiAppBars(containerId, apps, typeInfo, detailFn) {
     const container = document.getElementById(containerId);
     container.innerHTML = '';
-    const list = Array.isArray(apps) ? apps.filter(Boolean) : (apps ? [apps] : []);
+    const list = Array.isArray(apps) ? apps.filter(a => a && a.status !== 'deleted') : (apps ? [apps] : []);
     if (list.length === 0) { container.style.display = 'none'; return; }
     container.style.display = '';
     const icons  = {pending:'⏳', approved:'✅', rejected:'🚫'};
@@ -4170,6 +4173,7 @@ function renderMyApplications() {
       const apps = Array.isArray(val) ? val : (val ? [val] : []);
       apps.forEach((app, idx) => {
         if (!app) return;
+        if (app.status === 'deleted') return; // 管理者が削除した申請は非表示
 
         // 休日出勤は workDate を表示日として使い、重複排除
         if (t.key === 'holiday' && app.workDate) {
@@ -4660,6 +4664,7 @@ function renderApprovalList() {
         if(Array.isArray(val)){
           val.forEach((app,idx)=>{
             if(!app?.status) return;
+            if(app.status==='deleted') return; // 管理者が削除済みは非表示
             // 休日出勤：workDate を基準に重複排除・表示判定
             if(t.key==='holiday' && app.workDate){
               const holId=name+'_'+app.workDate+'_'+(app.submittedDate||dateKey);
@@ -4885,7 +4890,14 @@ function revokeApplication(userName, dateKey, type, idx) {
   if (idx !== undefined && idx !== null && idx !== '') {
     const i = parseInt(idx);
     if (Array.isArray(rec[type]) && rec[type][i]) {
-      rec[type].splice(i, 1);
+      if (type === 'misc') {
+        // splice せず deleted 状態にマーク（自動回復ロジックとの競合防止）
+        rec[type][i].status = 'deleted';
+        rec[type][i].deletedBy = currentUser;
+        rec[type][i].deletedAt = Date.now();
+      } else {
+        rec[type].splice(i, 1);
+      }
     }
   } else {
     if (type === 'otExt') {

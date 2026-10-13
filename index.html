@@ -1311,7 +1311,20 @@ function fetchAllFromGAS(onDone, silent) {
           const gasUpdatedAt   = rec.updatedAt   || 0;
           if (localPairs.length === 0 || gasUpdatedAt > localUpdatedAt) {
             // このデバイスに打刻なし、または GAS の方が新しい（別デバイスで修正された）→ GAS を使用
+            const priorMisc = localRec.misc;
             data.records[name][dk] = rec;
+            // ローカルでdeleted状態にしたmisc項目を保護
+            if (Array.isArray(priorMisc) && Array.isArray(data.records[name][dk].misc)) {
+              priorMisc.forEach(function(lm) {
+                if (!lm || lm.status !== 'deleted') return;
+                var arr = data.records[name][dk].misc;
+                for (var mi = 0; mi < arr.length; mi++) {
+                  if (arr[mi] && arr[mi].appliedAt === lm.appliedAt && arr[mi].status !== 'deleted') {
+                    arr[mi].status = 'deleted'; arr[mi].deletedBy = lm.deletedBy; arr[mi].deletedAt = lm.deletedAt; break;
+                  }
+                }
+              });
+            }
           } else {
             // このデバイスの打刻が最新 → 打刻はローカル優先、申請ステータスはGAS優先
             if (rec.ot)    data.records[name][dk].ot      = rec.ot;
@@ -1319,7 +1332,22 @@ function fetchAllFromGAS(onDone, silent) {
             if (Array.isArray(rec.paid)    && rec.paid.length    > 0) data.records[name][dk].paid    = rec.paid;
             if (Array.isArray(rec.holiday) && rec.holiday.length > 0) data.records[name][dk].holiday = rec.holiday;
             if (Array.isArray(rec.corrReq) && rec.corrReq.length > 0) data.records[name][dk].corrReq = rec.corrReq;
-            if (Array.isArray(rec.misc)    && rec.misc.length    > 0) data.records[name][dk].misc    = rec.misc;
+            if (Array.isArray(rec.misc) && rec.misc.length > 0) {
+              // ローカルのdeleted状態を保護してからGASデータを適用
+              var prevMiscLocal = data.records[name][dk].misc;
+              data.records[name][dk].misc = rec.misc;
+              if (Array.isArray(prevMiscLocal)) {
+                prevMiscLocal.forEach(function(lm) {
+                  if (!lm || lm.status !== 'deleted') return;
+                  var arr = data.records[name][dk].misc;
+                  for (var mi = 0; mi < arr.length; mi++) {
+                    if (arr[mi] && arr[mi].appliedAt === lm.appliedAt && arr[mi].status !== 'deleted') {
+                      arr[mi].status = 'deleted'; arr[mi].deletedBy = lm.deletedBy; arr[mi].deletedAt = lm.deletedAt; break;
+                    }
+                  }
+                });
+              }
+            }
           }
           return;
         }
@@ -1364,6 +1392,23 @@ function fetchAllFromGAS(onDone, silent) {
           }
         }
         data.records[name][dk] = rec;
+        // ── ローカルでdeleted状態にしたmisc項目をGASの古いデータで上書きされないよう保護 ──
+        // （syncRecordToGASとfetchAllFromGASのレース条件対策）
+        if (priorRec && Array.isArray(priorRec.misc) && Array.isArray(data.records[name][dk].misc)) {
+          priorRec.misc.forEach(function(localM) {
+            if (!localM || localM.status !== 'deleted') return;
+            var gasMiscArr = data.records[name][dk].misc;
+            var matchIdx = -1;
+            for (var mi = 0; mi < gasMiscArr.length; mi++) {
+              if (gasMiscArr[mi] && gasMiscArr[mi].appliedAt === localM.appliedAt) { matchIdx = mi; break; }
+            }
+            if (matchIdx >= 0 && gasMiscArr[matchIdx].status !== 'deleted') {
+              gasMiscArr[matchIdx].status    = 'deleted';
+              gasMiscArr[matchIdx].deletedBy = localM.deletedBy;
+              gasMiscArr[matchIdx].deletedAt = localM.deletedAt;
+            }
+          });
+        }
         // ── 現ユーザーの過去日付で、ローカルに pending misc があるが GAS にない場合は自動再送 ──
         // （初回同期失敗などでGASにデータが届かなかったときのリカバリ）
         if (name === currentUser && dk < today && gasUrl) {

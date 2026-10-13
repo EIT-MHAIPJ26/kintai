@@ -3302,8 +3302,9 @@ function submitMisc() {
     });
     saveData(); renderAll(); hideModal('modalMisc');
     const detail = subType + ' ' + rangeStart + '〜' + rangeEnd + '（' + dates.length + '日間）　' + reason;
-    notifyAdminsViaGAS('misc', detail, rangeStart);
-    dates.forEach(d => syncRecordToGAS(currentUser, d));
+    // 先頭日のみ通知を同梱し、残りは通知なし（重複行防止のため1リクエスト/日）
+    const _miscNotify = { name: currentUser, typeName: 'その他申請', detail, date: rangeStart };
+    dates.forEach((d, idx) => syncRecordToGAS(currentUser, d, idx === 0 ? _miscNotify : null));
     showToast(`📋 ${subType}（${rangeStart}〜${rangeEnd}・${dates.length}日間）を送信しました`);
   } else {
     // 単日
@@ -3316,8 +3317,8 @@ function submitMisc() {
     const timeStr  = startTime ? ' '+startTime+(endTime?'〜'+endTime:'') : '';
     const compStr  = wantComp ? `　振替希望：${compDate}${compTimeStart?' '+compTimeStart+(compTimeEnd?'〜'+compTimeEnd:''):''}` : '';
     const detail   = subType + ' ' + date + timeStr + compStr + '　' + reason;
-    notifyAdminsViaGAS('misc', detail, date);
-    syncRecordToGAS(currentUser, date); // 過去日付含め確実に記録（リトライ機能付き）
+    // 通知とデータ同期を1リクエストにまとめる（同時送信による重複行を防ぐ）
+    syncRecordToGAS(currentUser, date, { name: currentUser, typeName: 'その他申請', detail, date });
     showToast('📋 その他申請（'+subType+'）を送信しました');
   }
 }

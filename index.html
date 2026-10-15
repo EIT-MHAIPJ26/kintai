@@ -1553,6 +1553,11 @@ if (!data.users.find(u => (typeof u==='string'?u:u.name) === '鈴木史果')) {
   data.users.push({ name:'鈴木史果', role:'admin' });
   saveData();
 }
+// 大井拓登が未登録なら追加
+if (!data.users.find(u => (typeof u==='string'?u:u.name) === '大井拓登')) {
+  data.users.push({ name:'大井拓登', role:'member' });
+  saveData();
+}
 
 // ============================================================
 //  ユーティリティ

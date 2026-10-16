@@ -3547,12 +3547,15 @@ function earlyTimeValues_() {
 
 function renderEditAppForm(rec) {
   const form = document.getElementById('editAppForm');
+  const dateKey      = document.getElementById('editAppDate').value;
   const sectionStyle = 'margin-top:12px;border-top:1px solid var(--border);padding-top:10px;';
   const labelStyle   = 'font-size:12px;color:var(--subtext);display:block;margin-bottom:4px;';
   const selectStyle  = 'width:100%;border:1.5px solid var(--border);border-radius:9px;padding:8px 10px;font-size:14px;background:white;';
+  const inputStyle   = 'width:100%;border:1.5px solid var(--border);border-radius:9px;padding:8px 10px;font-size:14px;box-sizing:border-box;';
   const timeStyle    = 'flex:1;border:1.5px solid var(--border);border-radius:9px;padding:8px 10px;font-size:14px;';
   let html = '';
 
+  // 残業（日付変更なし）
   if (rec.ot) {
     html += `<div style="${sectionStyle}">
       <div style="font-size:13px;font-weight:700;color:var(--purple);margin-bottom:8px;">🕐 残業申請</div>
@@ -3560,20 +3563,28 @@ function renderEditAppForm(rec) {
       <select id="eaOtEnd" style="${selectStyle}">${buildOptHtml_(otTimeValues_(), rec.ot.plannedEnd)}</select>
     </div>`;
   }
+
+  // 早出
   if (rec.early) {
     html += `<div style="${sectionStyle}">
       <div style="font-size:13px;font-weight:700;color:var(--blue);margin-bottom:8px;">🌅 早出申請</div>
-      <label style="${labelStyle}">開始時刻（〜8:00）</label>
+      <label style="${labelStyle}">日付</label>
+      <input type="date" id="eaEarlyDate" value="${dateKey}" style="${inputStyle}"/>
+      <label style="${labelStyle};margin-top:8px;">開始時刻（〜8:00）</label>
       <select id="eaEarlyStart" style="${selectStyle}">${buildOptHtml_(earlyTimeValues_(), rec.early.startTime)}</select>
     </div>`;
   }
+
+  // 有給
   const _eaPaidArr = Array.isArray(rec.paid) ? rec.paid : (rec.paid ? [rec.paid] : []);
   const _eaPaid = _eaPaidArr.find(p => p.status !== 'rejected');
   if (_eaPaid) {
     const paidVals = getPaidTimes();
     html += `<div style="${sectionStyle}">
       <div style="font-size:13px;font-weight:700;color:var(--orange);margin-bottom:8px;">📅 有給申請</div>
-      <div style="display:flex;gap:8px;align-items:center;">
+      <label style="${labelStyle}">日付</label>
+      <input type="date" id="eaPaidDate" value="${_eaPaid.date || dateKey}" style="${inputStyle}"/>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
         <div style="flex:1;"><label style="${labelStyle}">開始</label>
           <select id="eaPaidStart" style="${selectStyle}">${buildOptHtml_(paidVals, _eaPaid.startTime)}</select></div>
         <span style="color:var(--subtext);padding-top:18px;">〜</span>
@@ -3582,12 +3593,16 @@ function renderEditAppForm(rec) {
       </div>
     </div>`;
   }
+
+  // 休日出勤
   const _eaHolArr = Array.isArray(rec.holiday) ? rec.holiday : (rec.holiday ? [rec.holiday] : []);
   const _eaHol = _eaHolArr.find(h => h.status !== 'rejected');
   if (_eaHol) {
     html += `<div style="${sectionStyle}">
       <div style="font-size:13px;font-weight:700;color:var(--danger);margin-bottom:8px;">🏢 休日出勤申請</div>
-      <div style="display:flex;gap:8px;align-items:center;">
+      <label style="${labelStyle}">勤務日</label>
+      <input type="date" id="eaHolDate" value="${_eaHol.workDate || dateKey}" style="${inputStyle}"/>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
         <div style="flex:1;"><label style="${labelStyle}">開始</label>
           <input type="time" id="eaHolStart" value="${_eaHol.startTime||''}" style="${timeStyle}"/></div>
         <span style="color:var(--subtext);padding-top:18px;">〜</span>
@@ -3596,6 +3611,26 @@ function renderEditAppForm(rec) {
       </div>
     </div>`;
   }
+
+  // その他申請
+  const _eaMiscArr = Array.isArray(rec.misc) ? rec.misc : [];
+  const allTimes = (function(){ const t=['']; for(let h=5;h<=22;h++) for(const m of[0,15,30,45]) t.push(String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')); return t; })();
+  _eaMiscArr.forEach((m, i) => {
+    if (!m || m.status === 'deleted' || m.status === 'rejected') return;
+    html += `<div style="${sectionStyle}">
+      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px;">📋 その他申請（${m.subType||''}）</div>
+      <label style="${labelStyle}">日付</label>
+      <input type="date" id="eaMiscDate_${i}" value="${m.date || dateKey}" style="${inputStyle}"/>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
+        <div style="flex:1;"><label style="${labelStyle}">開始（任意）</label>
+          <select id="eaMiscStart_${i}" style="${selectStyle}">${buildOptHtml_(allTimes, m.startTime||'')}</select></div>
+        <span style="color:var(--subtext);padding-top:18px;">〜</span>
+        <div style="flex:1;"><label style="${labelStyle}">終了（任意）</label>
+          <select id="eaMiscEnd_${i}" style="${selectStyle}">${buildOptHtml_(allTimes, m.endTime||'')}</select></div>
+      </div>
+    </div>`;
+  });
+
   if (!html) html = '<div style="font-size:13px;color:var(--subtext);padding:12px 0;">この日の申請データがありません</div>';
   form.innerHTML = html;
 }
@@ -3605,36 +3640,122 @@ function saveEditApp() {
   const dateKey = document.getElementById('editAppDate').value;
   if (!name || !dateKey) return;
   const rec = getRecByKey(name, dateKey);
+  const extraSyncs = []; // 追加でGAS同期が必要な日付
+  let _seHolFinalWorkDate = null;
 
-  const eaOtEnd      = document.getElementById('eaOtEnd');
+  // 残業（日付変更なし）
+  const eaOtEnd = document.getElementById('eaOtEnd');
+  if (eaOtEnd && rec.ot) rec.ot.plannedEnd = eaOtEnd.value;
+
+  // 早出
+  const eaEarlyDate  = document.getElementById('eaEarlyDate');
   const eaEarlyStart = document.getElementById('eaEarlyStart');
-  const eaPaidStart  = document.getElementById('eaPaidStart');
-  const eaPaidEnd    = document.getElementById('eaPaidEnd');
-  const eaHolStart   = document.getElementById('eaHolStart');
-  const eaHolEnd     = document.getElementById('eaHolEnd');
+  if (eaEarlyStart && rec.early) {
+    rec.early.startTime = eaEarlyStart.value;
+    const newDate = eaEarlyDate?.value;
+    if (newDate && newDate !== dateKey) {
+      const app = Object.assign({}, rec.early);
+      rec.early = null;
+      const nr = getRecByKey(name, newDate);
+      nr.early = app;
+      extraSyncs.push({ dk: newDate });
+    }
+  }
 
-  if (eaOtEnd      && rec.ot)    rec.ot.plannedEnd    = eaOtEnd.value;
-  if (eaEarlyStart && rec.early) rec.early.startTime  = eaEarlyStart.value;
-
+  // 有給
   const _sePaidArr = Array.isArray(rec.paid) ? rec.paid : (rec.paid ? [rec.paid] : []);
   const _sePaid = _sePaidArr.find(p => p.status !== 'rejected');
-  if (eaPaidStart && _sePaid) _sePaid.startTime = eaPaidStart.value;
-  if (eaPaidEnd   && _sePaid) _sePaid.endTime   = eaPaidEnd.value;
+  const eaPaidDate  = document.getElementById('eaPaidDate');
+  const eaPaidStart = document.getElementById('eaPaidStart');
+  const eaPaidEnd   = document.getElementById('eaPaidEnd');
+  if (_sePaid) {
+    if (eaPaidStart) _sePaid.startTime = eaPaidStart.value;
+    if (eaPaidEnd)   _sePaid.endTime   = eaPaidEnd.value;
+    const newDate = eaPaidDate?.value;
+    if (newDate && newDate !== dateKey) {
+      _sePaid.date = newDate;
+      const nr = getRecByKey(name, newDate);
+      if (!Array.isArray(nr.paid)) nr.paid = [];
+      nr.paid.push(Object.assign({}, _sePaid));
+      rec.paid = _sePaidArr.filter(p => p !== _sePaid);
+      if (!rec.paid.length) rec.paid = null;
+      extraSyncs.push({ dk: newDate });
+    }
+  }
 
+  // 休日出勤
   const _seHolArr = Array.isArray(rec.holiday) ? rec.holiday : (rec.holiday ? [rec.holiday] : []);
   const _seHol = _seHolArr.find(h => h.status !== 'rejected');
-  if (eaHolStart && _seHol) _seHol.startTime = eaHolStart.value;
-  if (eaHolEnd   && _seHol) _seHol.endTime   = eaHolEnd.value;
+  const eaHolDate  = document.getElementById('eaHolDate');
+  const eaHolStart = document.getElementById('eaHolStart');
+  const eaHolEnd   = document.getElementById('eaHolEnd');
+  if (_seHol) {
+    if (eaHolStart) _seHol.startTime = eaHolStart.value;
+    if (eaHolEnd)   _seHol.endTime   = eaHolEnd.value;
+    const oldWorkDate = _seHol.workDate || dateKey;
+    const newWorkDate = eaHolDate?.value || oldWorkDate;
+    if (newWorkDate !== oldWorkDate) {
+      // 旧workDateレコードから削除
+      const oldWorkRec = getRecByKey(name, oldWorkDate);
+      if (Array.isArray(oldWorkRec.holiday)) {
+        oldWorkRec.holiday = oldWorkRec.holiday.filter(h => h.appliedAt !== _seHol.appliedAt);
+        if (!oldWorkRec.holiday.length) oldWorkRec.holiday = null;
+      }
+      // 現在レコードからも削除
+      rec.holiday = _seHolArr.filter(h => h.appliedAt !== _seHol.appliedAt);
+      if (!rec.holiday.length) rec.holiday = null;
+      // 新workDateレコードに追加
+      _seHol.workDate = newWorkDate;
+      const newWorkRec = getRecByKey(name, newWorkDate);
+      if (!Array.isArray(newWorkRec.holiday)) newWorkRec.holiday = [];
+      newWorkRec.holiday.push(_seHol);
+      // 旧workDate行をクリア
+      extraSyncs.push({ dk: oldWorkDate, clearHol: true });
+      _seHolFinalWorkDate = newWorkDate;
+    } else {
+      _seHolFinalWorkDate = oldWorkDate;
+    }
+  }
+
+  // その他申請
+  const _seMiscArr = Array.isArray(rec.misc) ? rec.misc : [];
+  _seMiscArr.forEach((m, i) => {
+    if (!m || m.status === 'deleted' || m.status === 'rejected') return;
+    const eaMiscDate  = document.getElementById(`eaMiscDate_${i}`);
+    const eaMiscStart = document.getElementById(`eaMiscStart_${i}`);
+    const eaMiscEnd   = document.getElementById(`eaMiscEnd_${i}`);
+    if (!eaMiscDate) return;
+    if (eaMiscStart) m.startTime = eaMiscStart.value || null;
+    if (eaMiscEnd)   m.endTime   = eaMiscEnd.value   || null;
+    const oldDate = m.date || dateKey;
+    const newDate = eaMiscDate.value;
+    if (newDate && newDate !== oldDate) {
+      const newMiscRec = getRecByKey(name, newDate);
+      if (!Array.isArray(newMiscRec.misc)) newMiscRec.misc = [];
+      newMiscRec.misc.push(Object.assign({}, m, { date: newDate }));
+      m.status = 'deleted'; m.deletedBy = currentUser; m.deletedAt = Date.now();
+      extraSyncs.push({ dk: newDate });
+    }
+  });
 
   saveData(); renderAll(); hideModal('modalEditApp');
 
-  // 休日出勤は submittedDate の行に同期
-  if (_seHol) {
-    syncHolidayApp_(name, dateKey, _seHol);
+  // GAS同期
+  if (_seHol && _seHolFinalWorkDate) {
+    syncHolidayApp_(name, _seHolFinalWorkDate, _seHol);
   } else {
     syncRecordToGAS(name, dateKey);
   }
-  showToast('✅ 申請時間を修正しました');
+  let delay = 300;
+  extraSyncs.forEach(({ dk, clearHol }) => {
+    setTimeout(() => {
+      if (clearHol) syncRecordToGAS(name, dk, null, ['holiday']);
+      else          syncRecordToGAS(name, dk);
+    }, delay);
+    delay += 300;
+  });
+
+  showToast('✅ 申請を修正しました');
 }
 
 // ============================================================

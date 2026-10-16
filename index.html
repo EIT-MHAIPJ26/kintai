@@ -2861,7 +2861,10 @@ function submitHoliday() {
     const _reapplyDetail = workDate+' '+startTime+'〜'+endTime+' （再申請：'+reapplyReason+'）';
     const _reapplyNotify = { name:currentUser, typeName:'休日出勤申請', detail:_reapplyDetail, date:newEntry.submittedDate };
     const _reapplyRec = getRecByKey(currentUser, newEntry.submittedDate);
-    const _reapplyHol = (Array.isArray(getRecByKey(currentUser,ctx.dateKey).holiday)?getRecByKey(currentUser,ctx.dateKey).holiday:[]).filter(h=>h.submittedDate===newEntry.submittedDate);
+    // 同じ提出日の申請を全日付レコードから収集
+    const _reapplyHol = Object.values((data.records[currentUser]||{}))
+      .flatMap(r => Array.isArray(r.holiday) ? r.holiday : (r.holiday ? [r.holiday] : []))
+      .filter(h => (h.submittedDate || newEntry.submittedDate) === newEntry.submittedDate);
     const _reapplyBody = { action:'upsertRecord', name:currentUser, date:newEntry.submittedDate, pairs:_reapplyRec.pairs||[], ot:_reapplyRec.ot||null, early:_reapplyRec.early||null, paid:_reapplyRec.paid||null, holiday:_reapplyHol, misc:_reapplyRec.misc||null, corrReq:_reapplyRec.corrReq||[], lunchBreak:_reapplyRec.lunchBreak||null, updatedAt:_reapplyRec.updatedAt||0, notifyInfo:_reapplyNotify };
     updateSyncIndicator('syncing');
     fetch(gasUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(_reapplyBody)}).then(r=>r.json()).then(json=>{if(json&&json.ok)updateSyncIndicator('ok');else updateSyncIndicator('error');}).catch(()=>updateSyncIndicator('error'));
@@ -2877,7 +2880,10 @@ function submitHoliday() {
     saveData(); renderAll(); hideModal('modalHoliday');
     const _newHolNotify = { name:currentUser, typeName:'休日出勤申請', detail:workDate+' '+startTime+'〜'+endTime, date:newEntry.submittedDate };
     const _newHolRec = getRecByKey(currentUser, newEntry.submittedDate);
-    const _newHolList = (Array.isArray(rec.holiday)?rec.holiday:[]).filter(h=>h.submittedDate===newEntry.submittedDate);
+    // 同じ提出日の申請を全日付レコードから収集（複数workDateの申請が上書きされないよう）
+    const _newHolList = Object.values((data.records[currentUser]||{}))
+      .flatMap(r => Array.isArray(r.holiday) ? r.holiday : (r.holiday ? [r.holiday] : []))
+      .filter(h => (h.submittedDate || newEntry.submittedDate) === newEntry.submittedDate);
     const _newHolBody = { action:'upsertRecord', name:currentUser, date:newEntry.submittedDate, pairs:_newHolRec.pairs||[], ot:_newHolRec.ot||null, early:_newHolRec.early||null, paid:_newHolRec.paid||null, holiday:_newHolList, misc:_newHolRec.misc||null, corrReq:_newHolRec.corrReq||[], lunchBreak:_newHolRec.lunchBreak||null, updatedAt:_newHolRec.updatedAt||0, notifyInfo:_newHolNotify };
     updateSyncIndicator('syncing');
     fetch(gasUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(_newHolBody)}).then(r=>r.json()).then(json=>{if(json&&json.ok){updateSyncIndicator('ok');_syncErrorNotified=false;}else{updateSyncIndicator('error');notifySyncErrorToLW_(currentUser,newEntry.submittedDate);}}).catch(()=>{updateSyncIndicator('error');notifySyncErrorToLW_(currentUser,newEntry.submittedDate);});

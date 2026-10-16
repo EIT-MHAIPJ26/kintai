@@ -1540,24 +1540,35 @@ if (!data.users.find(u => (typeof u==='string'?u:u.name) === '大井拓登')) {
 
 // 休日申請データをworkDate行へ一度だけ移行
 (function() {
-  const MKEY = 'kintai_hol_migration_v3';
+  const MKEY = 'kintai_hol_migration_v4';
   if (localStorage.getItem(MKEY) || !gasUrl) return;
+
+  // ① GAS側の移行（submittedDate行→workDate行）
   fetch(gasUrl, { method:'POST', headers:{'Content-Type':'text/plain'},
     body: JSON.stringify({ action: 'migrateHolidayToWorkDate' }) })
     .then(r => r.json())
     .then(json => {
-      if (json && json.ok) {
-        localStorage.setItem(MKEY, '1');
-        if (json.migrated > 0) {
-          console.log('休日申請移行完了: ' + json.migrated + '件');
-          // 移行後にデータ再取得
-          if (typeof fetchAllFromGAS === 'function') setTimeout(() => fetchAllFromGAS(null, true), 1000);
-        } else {
-          localStorage.setItem(MKEY, '1');
-        }
-      }
+      if (!json || !json.ok) return;
+      localStorage.setItem(MKEY, '1');
+      console.log('GAS移行完了: ' + (json.migrated || 0) + '件');
+
+      // ② ローカルの全休日申請をworkDate行へ再同期
+      // （GASに保存されていない分も含めて全件送信）
+      let delay = 800;
+      Object.keys(data.records || {}).forEach(function(uName) {
+        Object.keys(data.records[uName] || {}).forEach(function(dk) {
+          const rec = data.records[uName][dk];
+          if (!Array.isArray(rec.holiday) || !rec.holiday.length) return;
+          rec.holiday.forEach(function(h) {
+            if (!h || h.status === 'deleted') return;
+            const wdk = h.workDate || dk;
+            setTimeout(function() { syncHolidayApp_(uName, wdk, h); }, delay);
+            delay += 400;
+          });
+        });
+      });
     })
-    .catch(() => {}); // 失敗しても次回ロード時に再試行
+    .catch(function() {}); // 失敗しても次回ロード時に再試行
 })();
 
 // ============================================================

@@ -524,8 +524,14 @@
   <div id="view-approval" style="display:none">
     <div class="records-card">
       <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;">
-        <span>✅ 申請 承認管理（早出・残業・有給・休日出勤）</span>
+        <span>✅ 承認管理</span>
         <button onclick="if(gasUrl)fetchAllFromGAS();" id="approvalFetchBtn" style="font-size:12px;padding:4px 10px;border:1.5px solid var(--border);border-radius:8px;background:white;color:var(--subtext);cursor:pointer;">🔄 更新</button>
+      </div>
+      <!-- 週ナビゲーション -->
+      <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin:4px 0 10px;">
+        <button onclick="changeApprovalWeek(-1)" style="padding:5px 14px;border:1.5px solid var(--border);border-radius:8px;background:white;color:var(--subtext);cursor:pointer;font-size:13px;">◀ 前週</button>
+        <span id="approvalWeekLabel" style="font-size:13px;font-weight:700;color:var(--text);min-width:120px;text-align:center;"></span>
+        <button onclick="changeApprovalWeek(1)" id="approvalWeekNextBtn" style="padding:5px 14px;border:1.5px solid var(--border);border-radius:8px;background:white;color:var(--subtext);cursor:pointer;font-size:13px;">次週 ▶</button>
       </div>
       <div id="approvalList"></div>
     </div>
@@ -4848,21 +4854,39 @@ function renderApprovalTab() {
   badge.textContent=count; badge.style.display=count>0?'':'none';
 }
 
+var adminApprovalWeekOffset = 0;
+function changeApprovalWeek(delta) {
+  adminApprovalWeekOffset += delta;
+  renderApprovalList();
+}
+
 function renderApprovalList() {
   if(!currentUser||!isAdmin(currentUser))return;
   const list=document.getElementById('approvalList');
-  // 今週の日曜日を起点に計算（日曜リセット）
+  // 週の計算：今週の日曜日 + offset週
   const now3=new Date();
-  const dow=now3.getDay(); // 0=日
-  const weekStart=new Date(now3); weekStart.setDate(now3.getDate()-dow);
+  const dow=now3.getDay();
+  const thisWeekSun=new Date(now3); thisWeekSun.setDate(now3.getDate()-dow);
+  const weekStart=new Date(thisWeekSun); weekStart.setDate(thisWeekSun.getDate()+adminApprovalWeekOffset*7);
+  const weekEnd=new Date(weekStart); weekEnd.setDate(weekStart.getDate()+6);
+  const isCurrentWeek = adminApprovalWeekOffset===0;
+  // 当週は今日まで、他週は土曜まで
+  const effectiveEnd = isCurrentWeek ? now3 : weekEnd;
   const weekStartKey=weekStart.toISOString().slice(0,10);
-  const weekEndKey=todayKey();
-  const wLbl=`${weekStart.getMonth()+1}/${weekStart.getDate()}〜${now3.getMonth()+1}/${now3.getDate()}`;
-  list.innerHTML=`<div style="font-size:11px;color:var(--subtext);font-weight:600;margin-bottom:8px;padding-left:2px;">📅 今週分 ${wLbl}（承認待ちは全期間表示）</div>`;
+  const weekEndKey=effectiveEnd.toISOString().slice(0,10);
+  const wLbl=`${weekStart.getMonth()+1}/${weekStart.getDate()}〜${effectiveEnd.getMonth()+1}/${effectiveEnd.getDate()}`;
+  const weekLabel=document.getElementById('approvalWeekLabel');
+  if(weekLabel) weekLabel.textContent = isCurrentWeek ? `今週 ${wLbl}` : adminApprovalWeekOffset<0 ? `${-adminApprovalWeekOffset}週前 ${wLbl}` : `${adminApprovalWeekOffset}週後 ${wLbl}`;
+  // 次週ボタン：来週以降は無効化
+  const nextBtn=document.getElementById('approvalWeekNextBtn');
+  if(nextBtn) nextBtn.disabled = adminApprovalWeekOffset >= 1;
+  list.innerHTML=`<div style="font-size:11px;color:var(--subtext);font-weight:600;margin-bottom:8px;padding-left:2px;">📅 ${isCurrentWeek?'今週（承認待ちは全期間表示）':'この期間の申請'} ${wLbl}</div>`;
 
   // ── 申請アイテム収集 ──────────────────────────────────────
   const allItems=[];
   const seenHolidaysApproval = new Set(); // 休日出勤重複排除用（管理者）
+  // 今週表示のみ：pending は全期間表示する。過去/未来週は指定週のみ表示
+  const showPendingAllTime = isCurrentWeek;
   getUserNames().forEach(name=>{
     Object.entries(getUserRecords(name)).forEach(([dateKey,r])=>{
       const rec=migrateRec(r);
@@ -4879,33 +4903,35 @@ function renderApprovalList() {
               if(seenHolidaysApproval.has(holId)) return;
               seenHolidaysApproval.add(holId);
               const wInWeek=app.workDate>=weekStartKey && app.workDate<=weekEndKey;
-              if(!wInWeek && app.status!=='pending') return;
+              if(!wInWeek && !(showPendingAllTime && app.status==='pending')) return;
               allItems.push({kind:'app',name,dateKey,displayDateKey:app.workDate,rec,type:t.key,typeInfo:t,app,idx});
               return;
             }
-            if(!inWeek && app.status!=='pending') return;
+            if(!inWeek && !(showPendingAllTime && app.status==='pending')) return;
             allItems.push({kind:'app',name,dateKey,displayDateKey:dateKey,rec,type:t.key,typeInfo:t,app,idx});
           });
-        } else if(val?.status && (inWeek || val.status==='pending')){
+        } else if(val?.status){
+          const showThis = inWeek || (showPendingAllTime && val.status==='pending');
+          if(!showThis) return;
           if(t.key==='holiday' && val.workDate){
             const holId=name+'_'+val.workDate+'_'+(val.submittedDate||dateKey);
             if(seenHolidaysApproval.has(holId)) return;
             seenHolidaysApproval.add(holId);
             const wInWeek=val.workDate>=weekStartKey && val.workDate<=weekEndKey;
-            if(!wInWeek && val.status!=='pending') return;
+            if(!wInWeek && !(showPendingAllTime && val.status==='pending')) return;
             allItems.push({kind:'app',name,dateKey,displayDateKey:val.workDate,rec,type:t.key,typeInfo:t,app:val,idx:null});
           } else {
             allItems.push({kind:'app',name,dateKey,displayDateKey:dateKey,rec,type:t.key,typeInfo:t,app:val,idx:null});
           }
         }
       });
-      if(rec.ot?.extension?.status && (inWeek || rec.ot.extension.status==='pending')){
+      if(rec.ot?.extension?.status && (inWeek || (showPendingAllTime && rec.ot.extension.status==='pending'))){
         allItems.push({kind:'app',name,dateKey,rec,type:'otExt',typeInfo:{key:'otExt',icon:'⏰',label:'残業延長申請',barClass:'pending',color:'var(--purple)'},app:rec.ot.extension,idx:null});
       }
       // 修正依頼
       if(Array.isArray(rec.corrReq)){
         rec.corrReq.forEach((req,idx)=>{
-          if(!inWeek && req.status!=='pending') return;
+          if(!inWeek && !(showPendingAllTime && req.status==='pending')) return;
           allItems.push({kind:'corr',name,dateKey,rec,req,idx});
         });
       }
@@ -4916,12 +4942,12 @@ function renderApprovalList() {
         apps.forEach((app,idx)=>{
           if(!app?.changeReq) return;
           const cr=app.changeReq;
-          if(!inWeek && cr.status!=='pending') return;
+          if(!inWeek && !(showPendingAllTime && cr.status==='pending')) return;
           allItems.push({kind:'changeReq',name,dateKey,rec,appType:t.key,typeInfo:t,app,appIdx:Array.isArray(val)?idx:null,cr});
         });
       });
       // 昼休憩申請
-      if(rec.lunchBreak?.status && (inWeek || rec.lunchBreak.status==='pending')){
+      if(rec.lunchBreak?.status && (inWeek || (showPendingAllTime && rec.lunchBreak.status==='pending'))){
         allItems.push({kind:'lunch',name,dateKey,rec,lb:rec.lunchBreak});
       }
     });
@@ -5131,8 +5157,10 @@ function switchTab(tab) {
     if (notice) notice.style.display = gasUrl ? 'none' : '';
     if (gasUrl) fetchAllFromGAS(null, true); // タブ切り替えはサイレント
   }
-  if (tab === 'approval' && gasUrl) {
-    fetchAllFromGAS(null, true); // タブ切り替えはサイレント
+  if (tab === 'approval') {
+    adminApprovalWeekOffset = 0; // タブを開いたら今週にリセット
+    if (gasUrl) fetchAllFromGAS(null, true); // タブ切り替えはサイレント
+    renderApprovalList();
   }
   if (tab === 'history') {
     // 履歴タブを開いたら当月にリセットして描画

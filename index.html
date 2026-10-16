@@ -1540,7 +1540,7 @@ if (!data.users.find(u => (typeof u==='string'?u:u.name) === '大井拓登')) {
 
 // 休日申請データをworkDate行へ一度だけ移行
 (function() {
-  const MKEY = 'kintai_hol_migration_v2';
+  const MKEY = 'kintai_hol_migration_v3';
   if (localStorage.getItem(MKEY) || !gasUrl) return;
   fetch(gasUrl, { method:'POST', headers:{'Content-Type':'text/plain'},
     body: JSON.stringify({ action: 'migrateHolidayToWorkDate' }) })

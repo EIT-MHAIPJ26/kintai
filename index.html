@@ -4855,31 +4855,72 @@ function renderApprovalTab() {
 }
 
 var adminApprovalWeekOffset = 0;
+const _WEEK_ANCHOR_ = new Date('2026-08-30T00:00:00+09:00');
+const _MS_PER_WEEK_ = 7*24*60*60*1000;
+
+// 申請が存在する週番号（アンカーからの週数）の一覧を返す
+function getWeeksWithApps_() {
+  const now = new Date();
+  const currentWeekNum = Math.floor((now - _WEEK_ANCHOR_) / _MS_PER_WEEK_);
+  const weekNums = new Set([currentWeekNum]); // 今週は常に含む
+  getUserNames().forEach(name => {
+    Object.entries(getUserRecords(name)).forEach(([dk, r]) => {
+      const rec = migrateRec(r);
+      APP_TYPES.forEach(t => {
+        const v = rec[t.key];
+        const apps = Array.isArray(v) ? v : (v ? [v] : []);
+        apps.forEach(a => {
+          if (!a?.status || a.status === 'deleted') return;
+          const d = (t.key === 'holiday' && a.workDate) ? a.workDate : dk;
+          weekNums.add(Math.floor((new Date(d+'T00:00:00+09:00') - _WEEK_ANCHOR_) / _MS_PER_WEEK_));
+        });
+      });
+      if (Array.isArray(rec.corrReq)) rec.corrReq.forEach(req => {
+        if (req?.status) weekNums.add(Math.floor((new Date(dk+'T00:00:00+09:00') - _WEEK_ANCHOR_) / _MS_PER_WEEK_));
+      });
+      if (rec.lunchBreak?.status) weekNums.add(Math.floor((new Date(dk+'T00:00:00+09:00') - _WEEK_ANCHOR_) / _MS_PER_WEEK_));
+    });
+  });
+  return [...weekNums].sort((a,b) => a-b);
+}
+
 function changeApprovalWeek(delta) {
-  adminApprovalWeekOffset += delta;
+  const now = new Date();
+  const currentWeekNum = Math.floor((now - _WEEK_ANCHOR_) / _MS_PER_WEEK_);
+  const displayWeekNum = currentWeekNum + adminApprovalWeekOffset;
+  const weeks = getWeeksWithApps_();
+  let idx = weeks.indexOf(displayWeekNum);
+  if (idx < 0) idx = weeks.findIndex(w => w >= displayWeekNum); // 近い週を探す
+  if (idx < 0) idx = weeks.length - 1;
+  const newIdx = Math.max(0, Math.min(weeks.length - 1, idx + delta));
+  adminApprovalWeekOffset = weeks[newIdx] - currentWeekNum;
   renderApprovalList();
 }
 
 function renderApprovalList() {
   if(!currentUser||!isAdmin(currentUser))return;
   const list=document.getElementById('approvalList');
-  // 週の計算：今週の日曜日 + offset週
-  const now3=new Date();
-  const dow=now3.getDay();
-  const thisWeekSun=new Date(now3); thisWeekSun.setDate(now3.getDate()-dow);
-  const weekStart=new Date(thisWeekSun); weekStart.setDate(thisWeekSun.getDate()+adminApprovalWeekOffset*7);
-  const weekEnd=new Date(weekStart); weekEnd.setDate(weekStart.getDate()+6);
-  const isCurrentWeek = adminApprovalWeekOffset===0;
-  // 当週は今日まで、他週は土曜まで
+  // 週の計算：8/30（日曜）固定アンカー（日〜土）
+  const now3 = new Date();
+  const currentWeekNum = Math.floor((now3 - _WEEK_ANCHOR_) / _MS_PER_WEEK_);
+  const displayWeekNum = currentWeekNum + adminApprovalWeekOffset;
+  const weekStart = new Date(_WEEK_ANCHOR_.getTime() + displayWeekNum * _MS_PER_WEEK_);
+  const weekEnd   = new Date(weekStart.getTime() + 6*24*60*60*1000);
+  const isCurrentWeek = displayWeekNum === currentWeekNum;
+  // 今週は今日まで、他週は土曜まで
   const effectiveEnd = isCurrentWeek ? now3 : weekEnd;
   const weekStartKey=weekStart.toISOString().slice(0,10);
   const weekEndKey=effectiveEnd.toISOString().slice(0,10);
-  const wLbl=`${weekStart.getMonth()+1}/${weekStart.getDate()}〜${effectiveEnd.getMonth()+1}/${effectiveEnd.getDate()}`;
+  const wLbl=`${weekStart.getMonth()+1}/${weekStart.getDate()}（日）〜${weekEnd.getMonth()+1}/${weekEnd.getDate()}（土）`;
   const weekLabel=document.getElementById('approvalWeekLabel');
   if(weekLabel) weekLabel.textContent = isCurrentWeek ? `今週 ${wLbl}` : adminApprovalWeekOffset<0 ? `${-adminApprovalWeekOffset}週前 ${wLbl}` : `${adminApprovalWeekOffset}週後 ${wLbl}`;
-  // 次週ボタン：来週以降は無効化
+  // 前週/次週ボタン：申請のある週リストで判定
+  const _approvalWeeks = getWeeksWithApps_();
+  const _curIdx = _approvalWeeks.indexOf(displayWeekNum);
+  const prevBtn=document.querySelector('#view-approval button[onclick="changeApprovalWeek(-1)"]');
   const nextBtn=document.getElementById('approvalWeekNextBtn');
-  if(nextBtn) nextBtn.disabled = adminApprovalWeekOffset >= 1;
+  if(prevBtn) prevBtn.disabled = _curIdx <= 0;
+  if(nextBtn) nextBtn.disabled = _curIdx < 0 || _curIdx >= _approvalWeeks.length - 1;
   list.innerHTML=`<div style="font-size:11px;color:var(--subtext);font-weight:600;margin-bottom:8px;padding-left:2px;">📅 ${isCurrentWeek?'今週（承認待ちは全期間表示）':'この期間の申請'} ${wLbl}</div>`;
 
   // ── 申請アイテム収集 ──────────────────────────────────────

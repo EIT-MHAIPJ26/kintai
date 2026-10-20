@@ -1577,6 +1577,36 @@ if (!data.users.find(u => (typeof u==='string'?u:u.name) === '大井拓登')) {
     .catch(function() {}); // 失敗しても次回ロード時に再試行
 })();
 
+// 残業除外メンバーのローカル残業データを一度だけ削除・GAS再同期
+(function() {
+  const MKEY = 'kintai_ot_clear_v1';
+  if (localStorage.getItem(MKEY)) return;
+  const OT_EXCLUDE = ['北條みずき', '牧　峰史', '梶本幸史', '大野　牧', '阿部一憲', '中島桂太'];
+  let changed = false;
+  const syncs = [];
+  OT_EXCLUDE.forEach(function(name) {
+    const recs = getUserRecords(name);
+    Object.keys(recs).forEach(function(dk) {
+      const rec = migrateRec(recs[dk]);
+      if (rec.ot) {
+        rec.ot = null;
+        changed = true;
+        syncs.push({ name, dk });
+      }
+    });
+  });
+  if (!changed) { localStorage.setItem(MKEY, '1'); return; }
+  saveData();
+  localStorage.setItem(MKEY, '1');
+  if (!gasUrl) return;
+  let delay = 0;
+  syncs.forEach(function(s) {
+    setTimeout(function() { syncRecordToGAS(s.name, s.dk, null, ['ot']); }, delay);
+    delay += 300;
+  });
+  console.log('残業データ削除完了: ' + syncs.length + '件');
+})();
+
 // ============================================================
 //  ユーティリティ
 // ============================================================

@@ -1377,6 +1377,15 @@ function fetchAllFromGAS(onDone, silent) {
           }
         }
         data.records[name][dk] = rec;
+        // ── 管理者が最近操作した申請をGASの古いデータで上書きされないよう保護 ──
+        // （syncRecordToGASとfetchAllFromGASのレース条件対策：120秒以内の操作を保護）
+        const _actedAt = _recentlyActed[name+'|'+dk];
+        if (priorRec && _actedAt && (Date.now() - _actedAt < 120000)) {
+          // 承認ステータス関連フィールドをローカルの値で上書き（打刻pairsはGAS優先のまま）
+          ['ot','early','paid','holiday','misc','lunchBreak'].forEach(function(k){
+            if (priorRec[k] !== undefined) data.records[name][dk][k] = priorRec[k];
+          });
+        }
         // ── ローカルでdeleted状態にしたmisc項目をGASの古いデータで上書きされないよう保護 ──
         // （syncRecordToGASとfetchAllFromGASのレース条件対策）
         if (priorRec && Array.isArray(priorRec.misc) && Array.isArray(data.records[name][dk].misc)) {
@@ -2069,6 +2078,7 @@ function approveApplication(userName, dateKey, type, idx) {
     rec[type].approvedBy = currentUser;
     rec[type].approvedAt = Date.now();
   }
+  _recentlyActed[userName+'|'+dateKey] = Date.now();
   saveData(); renderAll();
   if (type === 'holiday') {
     const _appHolArr = Array.isArray(rec.holiday) ? rec.holiday : (rec.holiday ? [rec.holiday] : []);
@@ -2244,6 +2254,7 @@ function approveOtExt(userName, dateKey) {
   rec.ot.extension.status = 'approved';
   rec.ot.extension.approvedBy = currentUser;
   rec.ot.extension.approvedAt = Date.now();
+  _recentlyActed[userName+'|'+dateKey] = Date.now();
   saveData(); renderAll();
   syncRecordToGAS(userName, dateKey);
   showToast('✅ '+userName+'の延長申請を承認しました（'+rec.ot.plannedEnd+'まで）');
@@ -2569,6 +2580,7 @@ function confirmReject() {
       rec[type].approvedAt=Date.now(); rec[type].comment=comment;
     }
   }
+  _recentlyActed[userName+'|'+dateKey] = Date.now();
   pendingRejectKey = null; saveData(); renderAll(); hideModal('rejectModal');
   if (type === 'holiday') {
     const _rejRec = getRecByKey(userName, dateKey);
@@ -3907,6 +3919,7 @@ function approveLunchBreak(name, dateKey) {
   rec.lunchBreak.status = 'approved';
   rec.lunchBreak.approvedBy = currentUser;
   rec.lunchBreak.approvedAt = Date.now();
+  _recentlyActed[name+'|'+dateKey] = Date.now();
   saveData();
   syncRecordToGAS(name, dateKey);
   renderApprovalList();
@@ -3926,6 +3939,7 @@ function rejectLunchBreak(name, dateKey, comment) {
   if (!rec.lunchBreak) return;
   rec.lunchBreak.status = 'rejected';
   rec.lunchBreak.comment = comment || '';
+  _recentlyActed[name+'|'+dateKey] = Date.now();
   saveData();
   syncRecordToGAS(name, dateKey);
   renderApprovalList();
@@ -4885,6 +4899,8 @@ function renderApprovalTab() {
 }
 
 var adminApprovalWeekOffset = 0;
+var _recentlyActed = {}; // name|dateKey → timestamp（管理者操作のレース条件対策）
+const _RECENTLY_ACTED_MS = 120000; // 2分間保護
 const _WEEK_ANCHOR_ = new Date('2026-08-30T00:00:00+09:00');
 const _MS_PER_WEEK_ = 7*24*60*60*1000;
 
@@ -5211,8 +5227,16 @@ function revokeApplication(userName, dateKey, type, idx) {
       rec[type] = null;
     }
   }
+  _recentlyActed[userName+'|'+dateKey] = Date.now();
   saveData(); renderAll();
-  syncRecordToGAS(userName, dateKey);
+  // GASは null/空配列を受け取っても既存データを保持する設計のため、
+  // clearFields で明示的に削除を指示する
+  var _cfRevoke = [];
+  if (type === 'ot')    _cfRevoke = ['ot'];
+  else if (type === 'early') _cfRevoke = ['early'];
+  else if (type === 'paid'    && Array.isArray(rec.paid)    && rec.paid.length    === 0) _cfRevoke = ['paid'];
+  else if (type === 'holiday' && Array.isArray(rec.holiday) && rec.holiday.length === 0) _cfRevoke = ['holiday'];
+  syncRecordToGAS(userName, dateKey, null, _cfRevoke.length ? _cfRevoke : undefined);
   showToast('🗑️ '+userName+'さんの'+typeName+'の承認を取り消しました');
 }
 

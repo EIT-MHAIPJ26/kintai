@@ -1379,10 +1379,11 @@ function fetchAllFromGAS(onDone, silent) {
         data.records[name][dk] = rec;
         // ── 管理者が最近操作した申請をGASの古いデータで上書きされないよう保護 ──
         // （syncRecordToGASとfetchAllFromGASのレース条件対策：120秒以内の操作を保護）
-        const _actedAt = _recentlyActed[name+'|'+dk];
-        if (priorRec && _actedAt && (Date.now() - _actedAt < 120000)) {
-          // 承認ステータス関連フィールドをローカルの値で上書き（打刻pairsはGAS優先のまま）
-          ['ot','early','paid','holiday','misc','lunchBreak'].forEach(function(k){
+        const _actedInfo = _recentlyActed[name+'|'+dk];
+        // _actedInfo は {at, fields:[...]} 形式
+        // 操作したフィールドのみ保護（他フィールドにGASから届いた新規申請を消さないため）
+        if (priorRec && _actedInfo && _actedInfo.fields && (Date.now() - _actedInfo.at < _RECENTLY_ACTED_MS)) {
+          _actedInfo.fields.forEach(function(k){
             if (priorRec[k] !== undefined) data.records[name][dk][k] = priorRec[k];
           });
         }
@@ -2078,7 +2079,7 @@ function approveApplication(userName, dateKey, type, idx) {
     rec[type].approvedBy = currentUser;
     rec[type].approvedAt = Date.now();
   }
-  _recentlyActed[userName+'|'+dateKey] = Date.now();
+  _recentlyActed[userName+'|'+dateKey] = { at: Date.now(), fields: [type] };
   saveData(); renderAll();
   if (type === 'holiday') {
     const _appHolArr = Array.isArray(rec.holiday) ? rec.holiday : (rec.holiday ? [rec.holiday] : []);
@@ -2254,7 +2255,7 @@ function approveOtExt(userName, dateKey) {
   rec.ot.extension.status = 'approved';
   rec.ot.extension.approvedBy = currentUser;
   rec.ot.extension.approvedAt = Date.now();
-  _recentlyActed[userName+'|'+dateKey] = Date.now();
+  _recentlyActed[userName+'|'+dateKey] = { at: Date.now(), fields: ['ot'] };
   saveData(); renderAll();
   syncRecordToGAS(userName, dateKey);
   showToast('✅ '+userName+'の延長申請を承認しました（'+rec.ot.plannedEnd+'まで）');
@@ -2580,7 +2581,7 @@ function confirmReject() {
       rec[type].approvedAt=Date.now(); rec[type].comment=comment;
     }
   }
-  _recentlyActed[userName+'|'+dateKey] = Date.now();
+  _recentlyActed[userName+'|'+dateKey] = { at: Date.now(), fields: [type === 'otExt' ? 'ot' : type] };
   pendingRejectKey = null; saveData(); renderAll(); hideModal('rejectModal');
   if (type === 'holiday') {
     const _rejRec = getRecByKey(userName, dateKey);
@@ -3919,7 +3920,7 @@ function approveLunchBreak(name, dateKey) {
   rec.lunchBreak.status = 'approved';
   rec.lunchBreak.approvedBy = currentUser;
   rec.lunchBreak.approvedAt = Date.now();
-  _recentlyActed[name+'|'+dateKey] = Date.now();
+  _recentlyActed[name+'|'+dateKey] = { at: Date.now(), fields: ['lunchBreak'] };
   saveData();
   syncRecordToGAS(name, dateKey);
   renderApprovalList();
@@ -3939,7 +3940,7 @@ function rejectLunchBreak(name, dateKey, comment) {
   if (!rec.lunchBreak) return;
   rec.lunchBreak.status = 'rejected';
   rec.lunchBreak.comment = comment || '';
-  _recentlyActed[name+'|'+dateKey] = Date.now();
+  _recentlyActed[name+'|'+dateKey] = { at: Date.now(), fields: ['lunchBreak'] };
   saveData();
   syncRecordToGAS(name, dateKey);
   renderApprovalList();
@@ -4889,8 +4890,20 @@ function renderApprovalTab() {
 }
 
 var adminApprovalWeekOffset = 0;
-var _recentlyActed = {}; // name|dateKey → timestamp（管理者操作のレース条件対策）
+var _recentlyActed = {}; // name|dateKey → {at:timestamp, fields:[...]} （管理者操作のレース条件対策）
 const _RECENTLY_ACTED_MS = 120000; // 2分間保護
+
+// 操作したフィールドを記録（複数操作がある場合はマージ）
+function recordActedField_(name, dateKey, field) {
+  const key = name + '|' + dateKey;
+  const ex = _recentlyActed[key];
+  if (ex && (Date.now() - ex.at < _RECENTLY_ACTED_MS)) {
+    ex.at = Date.now();
+    if (ex.fields.indexOf(field) < 0) ex.fields.push(field);
+  } else {
+    _recentlyActed[key] = {at: Date.now(), fields: [field]};
+  }
+}
 const _WEEK_ANCHOR_ = new Date('2026-08-30T00:00:00+09:00');
 const _MS_PER_WEEK_ = 7*24*60*60*1000;
 
@@ -4945,8 +4958,8 @@ function renderApprovalList() {
   const isCurrentWeek = displayWeekNum === currentWeekNum;
   // 今週は今日まで、他週は土曜まで
   const effectiveEnd = isCurrentWeek ? now3 : weekEnd;
-  const weekStartKey=weekStart.toISOString().slice(0,10);
-  const weekEndKey=effectiveEnd.toISOString().slice(0,10);
+  const weekStartKey=toDateKey(weekStart);   // ローカル日付（JST）で比較
+  const weekEndKey=toDateKey(effectiveEnd);  // ローカル日付（JST）で比較
   const wLbl=`${weekStart.getMonth()+1}/${weekStart.getDate()}（日）〜${weekEnd.getMonth()+1}/${weekEnd.getDate()}（土）`;
   const weekLabel=document.getElementById('approvalWeekLabel');
   if(weekLabel) weekLabel.textContent = isCurrentWeek ? `今週 ${wLbl}` : adminApprovalWeekOffset<0 ? `${-adminApprovalWeekOffset}週前 ${wLbl}` : `${adminApprovalWeekOffset}週後 ${wLbl}`;
@@ -5217,7 +5230,7 @@ function revokeApplication(userName, dateKey, type, idx) {
       rec[type] = null;
     }
   }
-  _recentlyActed[userName+'|'+dateKey] = Date.now();
+  _recentlyActed[userName+'|'+dateKey] = { at: Date.now(), fields: [type === 'otExt' ? 'ot' : type] };
   saveData(); renderAll();
   // GASは null/空配列を受け取っても既存データを保持する設計のため、
   // clearFields で明示的に削除を指示する

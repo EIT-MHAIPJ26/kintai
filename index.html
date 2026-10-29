@@ -81,6 +81,7 @@
     .ot-status-bar.pending{background:#FFF8E1;color:#B8860B;border:1px solid #FFE082;}
     .ot-status-bar.approved{background:#E8F9EF;color:var(--primary-dark);border:1px solid #A8E6C0;}
     .ot-status-bar.rejected{background:#FFF0F0;color:var(--danger);border:1px solid #FFB3B3;}
+    .ot-status-bar.cancelRequested{background:#F3E8FF;color:#7B2FBE;border:1px solid #D0A8F0;}
 
     /* 打刻ボタン */
     .clock-buttons{display:flex;gap:10px;margin-bottom:10px;}
@@ -2093,6 +2094,16 @@ function approveApplication(userName, dateKey, type, idx) {
     rec[type][i].approvedAt = Date.now();
   } else {
     if (!rec?.[type]) return;
+    // 取消申請の承認 → レコードを削除してスプレッドシートも消去
+    if (rec[type].status === 'cancelRequested') {
+      if (!confirm(userName+'さんの'+(APP_TYPES.find(t=>t.key===type)?.label||type)+'の取消を承認しますか？（スプレッドシートからも削除されます）')) return;
+      rec[type] = null;
+      _recentlyActed[userName+'|'+dateKey] = { at: Date.now(), fields: [type] };
+      saveData(); renderAll();
+      syncRecordToGAS(userName, dateKey, null, [type]);
+      showToast('✅ 取消を承認しました（スプレッドシートも削除）');
+      return;
+    }
     rec[type].status = 'approved';
     rec[type].approvedBy = currentUser;
     rec[type].approvedAt = Date.now();
@@ -2134,6 +2145,7 @@ function showOtModal() {
   const rec = getTodayRec();
   if (rec.ot) {
     if (rec.ot.status === 'pending') { showToast('申請中です。承認をお待ちください'); return; }
+    if (rec.ot.status === 'cancelRequested') { showToast('取消申請中です。管理者の承認をお待ちください'); return; }
     if (rec.ot.status === 'approved') {
       // 承認済み → 延長申請へ（申請状況タブからの再申請はshowOtReapplyModal使用）
       const ext = rec.ot.extension;
@@ -2208,12 +2220,28 @@ function cancelOt() {
   if (!currentUser) return;
   const rec = getTodayRec();
   if (!rec.ot || rec.ot.status === 'rejected') { showToast('取り消しできる申請がありません'); return; }
+  if (rec.ot.status === 'approved') { requestCancelOt(); return; }
   if (!confirm('残業申請を取り消しますか？')) return;
   rec.ot = null;
   recordActedField_(currentUser, todayKey(), 'ot'); // fetch上書き保護
   saveData(); renderAll();
   syncRecordToGAS(currentUser, todayKey(), null, ['ot']);
   showToast('🗑️ 残業申請を取り消しました');
+}
+
+function requestCancelOt() {
+  if (!currentUser) return;
+  const rec = getTodayRec();
+  if (!rec.ot || rec.ot.status !== 'approved') { showToast('承認済みの残業申請がありません'); return; }
+  if (rec.ot.cancelRequestedAt) { showToast('取消申請はすでに提出済みです'); return; }
+  if (!confirm('残業申請の取消を申請しますか？（管理者の承認後に取り消されます）')) return;
+  rec.ot.status = 'cancelRequested';
+  rec.ot.cancelRequestedAt = Date.now();
+  rec.ot.cancelRequestedBy = currentUser;
+  recordActedField_(currentUser, todayKey(), 'ot');
+  saveData(); renderAll();
+  syncRecordToGAS(currentUser, todayKey());
+  showToast('📋 残業取消申請を送信しました');
 }
 
 // ── 残業延長申請 ──────────────────────────────────────────────
@@ -2338,7 +2366,6 @@ function cancelAppByDate(type, dateKey, idx) {
       // 勤務日と提出日の両方のローカルレコードから削除
       const _wk = _cancelApp.workDate || dateKey;
       const _sd = _cancelApp.submittedDate || dateKey;
-      // dateKey が workDate と異なる場合 → 勤務日レコードからも削除
       if (_wk !== dateKey) {
         const _wRec = getRecByKey(currentUser, _wk);
         if (Array.isArray(_wRec.holiday)) {
@@ -2346,7 +2373,6 @@ function cancelAppByDate(type, dateKey, idx) {
           if (_wRec.holiday.length === 0) _wRec.holiday = null;
         }
       }
-      // dateKey が submittedDate と異なる場合 → 提出日レコードからも削除
       if (_sd !== dateKey) {
         const _sRec = getRecByKey(currentUser, _sd);
         if (Array.isArray(_sRec.holiday)) {
@@ -2355,25 +2381,43 @@ function cancelAppByDate(type, dateKey, idx) {
         }
       }
       saveData(); renderAll();
-      syncHolidayApp_(currentUser, _wk, _cancelApp); // GAS 提出日行をクリア
-      // dateKey（実際に操作した行）≠ 提出日の場合、そのGAS行も明示クリア
-      // （旧コードが誤って書き込んだデータが残っている可能性があるため）
+      syncHolidayApp_(currentUser, _wk, _cancelApp);
       if (dateKey !== _sd) {
         setTimeout(() => syncRecordToGAS(currentUser, dateKey, null, ['holiday']), 500);
       }
     } else {
+      // 有給など：配列が空になった場合は GAS に明示削除を指示
+      const _isEmpty = !Array.isArray(rec[type]) || rec[type].length === 0;
+      const _cf = _isEmpty ? [type] : undefined;
+      if (_isEmpty) recordActedField_(currentUser, dateKey, type); // fetch上書き保護
       saveData(); renderAll();
-      syncRecordToGAS(currentUser, dateKey);
+      syncRecordToGAS(currentUser, dateKey, null, _cf);
     }
   } else {
     // 単体型（残業・早出）
-    if (!rec[type] || rec[type].status === 'rejected') { showToast('取り消しできる申請がありません'); return; }
+    if (!rec[type] || rec[type].status === 'rejected' || rec[type].status === 'cancelRequested') {
+      showToast('取り消しできる申請がありません'); return;
+    }
+    // 承認済みの場合は取消申請フロー
+    if (rec[type].status === 'approved') {
+      if (rec[type].cancelRequestedAt) { showToast('取消申請はすでに提出済みです'); return; }
+      if (!confirm(typeName+'の取消を申請しますか？（管理者の承認後に取り消されます）')) return;
+      rec[type].status = 'cancelRequested';
+      rec[type].cancelRequestedAt = Date.now();
+      rec[type].cancelRequestedBy = currentUser;
+      recordActedField_(currentUser, dateKey, type);
+      saveData(); renderAll();
+      syncRecordToGAS(currentUser, dateKey);
+      showToast('📋 '+typeName+'の取消申請を送信しました');
+      return;
+    }
     if (!confirm(typeName+'を取り消しますか？')) return;
     rec[type] = null;
+    recordActedField_(currentUser, dateKey, type); // fetch上書き保護（GASが処理する前に復活しないよう）
     saveData(); renderAll();
     syncRecordToGAS(currentUser, dateKey, null, [type]); // GASに明示削除を指示
+    showToast('🗑️ '+typeName+'を取り消しました');
   }
-  showToast('🗑️ '+typeName+'を取り消しました');
 }
 
 // ============================================================
@@ -2553,12 +2597,28 @@ function cancelEarly() {
   if (!currentUser) return;
   const rec = getTodayRec();
   if (!rec.early || rec.early.status === 'rejected') { showToast('取り消しできる申請がありません'); return; }
+  if (rec.early.status === 'approved') { requestCancelEarly(); return; }
   if (!confirm('早出申請を取り消しますか？')) return;
   rec.early = null;
   recordActedField_(currentUser, todayKey(), 'early'); // fetch上書き保護
   saveData(); renderAll();
   syncRecordToGAS(currentUser, todayKey(), null, ['early']);
   showToast('🗑️ 早出申請を取り消しました');
+}
+
+function requestCancelEarly() {
+  if (!currentUser) return;
+  const rec = getTodayRec();
+  if (!rec.early || rec.early.status !== 'approved') { showToast('承認済みの早出申請がありません'); return; }
+  if (rec.early.cancelRequestedAt) { showToast('取消申請はすでに提出済みです'); return; }
+  if (!confirm('早出申請の取消を申請しますか？（管理者の承認後に取り消されます）')) return;
+  rec.early.status = 'cancelRequested';
+  rec.early.cancelRequestedAt = Date.now();
+  rec.early.cancelRequestedBy = currentUser;
+  recordActedField_(currentUser, todayKey(), 'early');
+  saveData(); renderAll();
+  syncRecordToGAS(currentUser, todayKey());
+  showToast('📋 早出取消申請を送信しました');
 }
 
 function approveOt(userName, dateKey) {
@@ -2597,8 +2657,15 @@ function confirmReject() {
     }
   } else {
     if (rec?.[type]) {
-      rec[type].status='rejected'; rec[type].approvedBy=currentUser;
-      rec[type].approvedAt=Date.now(); rec[type].comment=comment;
+      // 取消申請の却下 → approved に戻す
+      if (rec[type].status === 'cancelRequested') {
+        rec[type].status = 'approved';
+        delete rec[type].cancelRequestedAt;
+        delete rec[type].cancelRequestedBy;
+      } else {
+        rec[type].status='rejected'; rec[type].approvedBy=currentUser;
+        rec[type].approvedAt=Date.now(); rec[type].comment=comment;
+      }
     }
   }
   _recentlyActed[userName+'|'+dateKey] = { at: Date.now(), fields: [type === 'otExt' ? 'ot' : type] };
@@ -2721,6 +2788,7 @@ function submitEarly() {
   if (wantComp && !compDate) { showToast('振替希望日を選択してください'); return; }
   const rec = getRecByKey(currentUser, date);
   if (rec.early?.status === 'pending')  { showToast('申請中です'); return; }
+  if (rec.early?.status === 'cancelRequested') { showToast('取消申請中です。管理者の承認をお待ちください'); return; }
   if (rec.early?.status === 'approved') { showToast('承認済みです'); return; }
   rec.early = { startTime, reason, wantComp, compDate: wantComp ? compDate : '', compTimeStart: wantComp ? compTimeStart : '', compTimeEnd: wantComp ? compTimeEnd : '', status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
   saveData(); renderAll(); hideModal('modalEarly');
@@ -4146,14 +4214,20 @@ function renderStatus() {
   function renderAppBar(barId, app, typeInfo, detailText) {
     const bar = document.getElementById(barId);
     if (!app) { bar.style.display='none'; return; }
-    const icons  = {pending:'⏳',approved:'✅',rejected:'🚫'};
-    const labels = {pending:'承認待ち',approved:'承認済み',rejected:'却下'};
+    const icons  = {pending:'⏳',approved:'✅',rejected:'🚫',cancelRequested:'🔴'};
+    const labels = {pending:'承認待ち',approved:'承認済み',rejected:'却下',cancelRequested:'取消申請中'};
     let txt = icons[app.status]+' '+typeInfo.label+' '+labels[app.status]+' ／ '+detailText;
     if (app.status==='rejected'&&app.comment) txt += '（'+app.comment+'）';
-    const cancelBtn = (typeInfo.key==='early' && app.status!=='rejected')
-      ? `<button onclick="cancelEarly()" style="margin-left:8px;font-size:11px;padding:3px 9px;border:1px solid currentColor;border-radius:6px;background:transparent;color:inherit;cursor:pointer;opacity:.8;">取り消し</button>`
-      : '';
-    bar.className = 'ot-status-bar '+typeInfo.barClass;
+    // pending → 即時取り消し、approved → 取消申請、cancelRequested → ボタンなし
+    let cancelBtn = '';
+    if (typeInfo.key==='early') {
+      if (app.status==='pending') {
+        cancelBtn = `<button onclick="cancelEarly()" style="margin-left:8px;font-size:11px;padding:3px 9px;border:1px solid currentColor;border-radius:6px;background:transparent;color:inherit;cursor:pointer;opacity:.8;">取り消し</button>`;
+      } else if (app.status==='approved') {
+        cancelBtn = `<button onclick="requestCancelEarly()" style="margin-left:8px;font-size:11px;padding:3px 9px;border:1px solid currentColor;border-radius:6px;background:transparent;color:inherit;cursor:pointer;opacity:.8;">取消申請</button>`;
+      }
+    }
+    bar.className = 'ot-status-bar '+(app.status==='cancelRequested'?'cancelRequested':typeInfo.barClass);
     bar.innerHTML = txt + cancelBtn; bar.style.display = '';
   }
   // ── 配列型ステータスバー（有給・休日出勤）──
@@ -4186,14 +4260,17 @@ function renderStatus() {
   const otBar = document.getElementById('otStatusBar');
   if (rec.ot) {
     const {status, plannedEnd, comment} = rec.ot;
-    const icons  = {pending:'⏳', approved:'✅', rejected:'🚫'};
-    const labels = {pending:'承認待ち', approved:'承認済み', rejected:'却下'};
+    const icons  = {pending:'⏳', approved:'✅', rejected:'🚫', cancelRequested:'🔴'};
+    const labels = {pending:'承認待ち', approved:'承認済み', rejected:'却下', cancelRequested:'取消申請中'};
     let txt = icons[status]+' 残業申請 '+labels[status]+' ／ '+plannedEnd+'まで';
     if (status==='rejected' && comment) txt += '（'+comment+'）';
-    const cancelBtn = status!=='rejected'
+    // pending → 即時取り消し、approved → 取消申請、cancelRequested → 申請中表示のみ
+    const cancelBtn = status==='pending'
       ? `<button onclick="cancelOt()" style="margin-left:8px;font-size:11px;padding:3px 9px;border:1px solid currentColor;border-radius:6px;background:transparent;color:inherit;cursor:pointer;opacity:.8;">取り消し</button>`
+      : status==='approved'
+      ? `<button onclick="requestCancelOt()" style="margin-left:8px;font-size:11px;padding:3px 9px;border:1px solid currentColor;border-radius:6px;background:transparent;color:inherit;cursor:pointer;opacity:.8;">取消申請</button>`
       : '';
-    otBar.className = 'ot-status-bar '+status;
+    otBar.className = 'ot-status-bar '+(status==='cancelRequested'?'cancelRequested':status);
     otBar.innerHTML = txt + cancelBtn;
     otBar.style.display = '';
     // 延長申請が存在する場合は専用バーに表示
@@ -4289,25 +4366,33 @@ function renderUpcomingApps() {
 
   if (deduped.length === 0) { upEl.style.display='none'; return; }
 
-  const stIcons  = { pending:'⏳', approved:'✅' };
-  const stLabels = { pending:'承認待ち', approved:'承認済み' };
-  const stColors = { pending:'#B8860B', approved:'var(--primary-dark)' };
-  const stBgs    = { pending:'#FFF8E1', approved:'#E8F9EF' };
+  const stIcons  = { pending:'⏳', approved:'✅', cancelRequested:'🔴' };
+  const stLabels = { pending:'承認待ち', approved:'承認済み', cancelRequested:'取消申請中' };
+  const stColors = { pending:'#B8860B', approved:'var(--primary-dark)', cancelRequested:'#7B2FBE' };
+  const stBgs    = { pending:'#FFF8E1', approved:'#E8F9EF', cancelRequested:'#F3E8FF' };
 
   upEl.style.display = '';
   upEl.innerHTML = '<div style="font-size:12px;font-weight:700;color:var(--subtext);margin-bottom:7px;">📋 申請中・承認済みの予定</div>';
 
-  deduped.forEach(({ targetDate, typeInfo, app, detail }) => {
+  deduped.forEach(({ targetDate, dateKey, typeInfo, app, detail, appIdx }) => {
     const d = new Date(targetDate.replace(/-/g,'/'));
     const dateStr = (d.getMonth()+1)+'/'+d.getDate()+'（'+WEEKDAYS[d.getDay()]+'）';
     const row = document.createElement('div');
     row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px;flex-wrap:wrap;';
 
+    // 残業・早出・有給のみ承認待ち時に取り消しボタンを表示
+    const canCancelTypes = ['ot','early','paid'];
+    const idxArg = (appIdx !== null && appIdx !== undefined) ? `,${appIdx}` : '';
+    const cancelBtn = (app.status === 'pending' && canCancelTypes.includes(typeInfo.key))
+      ? `<button onclick="cancelAppByDate('${typeInfo.key}','${dateKey}'${idxArg})" style="font-size:11px;padding:2px 8px;border:1px solid var(--danger);border-radius:5px;background:transparent;color:var(--danger);cursor:pointer;white-space:nowrap;">取り消し</button>`
+      : '';
+
     row.innerHTML = `
       <span style="font-weight:700;color:${typeInfo.color};white-space:nowrap;">${typeInfo.icon} ${typeInfo.label}</span>
       <span style="color:var(--subtext);white-space:nowrap;">${dateStr}</span>
       <span style="flex:1;color:var(--text);">${detail}</span>
-      <span style="padding:2px 8px;border-radius:6px;font-weight:700;white-space:nowrap;background:${stBgs[app.status]};color:${stColors[app.status]};">${stIcons[app.status]} ${stLabels[app.status]}</span>`;
+      <span style="padding:2px 8px;border-radius:6px;font-weight:700;white-space:nowrap;background:${stBgs[app.status]};color:${stColors[app.status]};">${stIcons[app.status]} ${stLabels[app.status]}</span>
+      ${cancelBtn}`;
     upEl.appendChild(row);
   });
 }
@@ -4597,8 +4682,8 @@ function renderMyApplications() {
     return;
   }
 
-  const stIcons  = { pending:'⏳', approved:'✅', rejected:'🚫' };
-  const stLabels = { pending:'承認待ち', approved:'承認済み', rejected:'却下' };
+  const stIcons  = { pending:'⏳', approved:'✅', rejected:'🚫', cancelRequested:'🔴' };
+  const stLabels = { pending:'承認待ち', approved:'承認済み', rejected:'却下', cancelRequested:'取消申請中' };
 
   items.forEach(entry => {
     const item = document.createElement('div');
@@ -4671,9 +4756,16 @@ function renderMyApplications() {
       const commentTxt = app.status==='rejected' && app.comment
         ? `<div class="myapp-reason">💬 ${app.comment}</div>` : '';
       const idxArg = appIdx !== null ? `,${appIdx}` : '';
-      const cancelBtn = app.status === 'pending'
-        ? `<button onclick="cancelAppByDate('${typeInfo.key}','${dateKey}'${idxArg})" style="margin-left:8px;font-size:11px;padding:3px 9px;border:1px solid var(--danger);border-radius:6px;background:transparent;color:var(--danger);cursor:pointer;">取り消し</button>`
-        : '';
+      // pending → 即時取り消し、approved(OT/早出) → 取消申請、cancelRequested → ボタンなし
+      let cancelBtn = '';
+      const _singleCancelTypes = ['ot','early'];
+      if (app.status === 'pending') {
+        cancelBtn = `<button onclick="cancelAppByDate('${typeInfo.key}','${dateKey}'${idxArg})" style="margin-left:8px;font-size:11px;padding:3px 9px;border:1px solid var(--danger);border-radius:6px;background:transparent;color:var(--danger);cursor:pointer;">取り消し</button>`;
+      } else if (app.status === 'approved' && _singleCancelTypes.includes(typeInfo.key)) {
+        cancelBtn = `<button onclick="cancelAppByDate('${typeInfo.key}','${dateKey}'${idxArg})" style="margin-left:8px;font-size:11px;padding:3px 9px;border:1px solid #7B2FBE;border-radius:6px;background:transparent;color:#7B2FBE;cursor:pointer;">取消申請</button>`;
+      } else if (app.status === 'cancelRequested') {
+        cancelBtn = `<span style="margin-left:8px;font-size:11px;padding:2px 8px;border-radius:6px;background:#F3E8FF;color:#7B2FBE;font-weight:700;">🔴 取消申請中</span>`;
+      }
       let reapplyBtn = '';
       if (typeInfo.key === 'holiday' && app.status === 'approved') {
         reapplyBtn = `<button onclick="showHolidayReapplyModal('${dateKey}',${appIdx})" style="margin-left:8px;font-size:11px;padding:3px 9px;border:1px solid var(--danger);border-radius:6px;background:transparent;color:var(--danger);cursor:pointer;">🔄 再申請</button>`;
@@ -5082,15 +5174,15 @@ function renderApprovalList() {
               if(seenHolidaysApproval.has(holId)) return;
               seenHolidaysApproval.add(holId);
               const wInWeek=app.workDate>=weekStartKey && app.workDate<=weekEndKey;
-              if(!wInWeek && !(showPendingAllTime && app.status==='pending')) return;
+              if(!wInWeek && !(showPendingAllTime && (app.status==='pending'||app.status==='cancelRequested'))) return;
               allItems.push({kind:'app',name,dateKey,displayDateKey:app.workDate,rec,type:t.key,typeInfo:t,app,idx});
               return;
             }
-            if(!inWeek && !(showPendingAllTime && app.status==='pending')) return;
+            if(!inWeek && !(showPendingAllTime && (app.status==='pending'||app.status==='cancelRequested'))) return;
             allItems.push({kind:'app',name,dateKey,displayDateKey:dateKey,rec,type:t.key,typeInfo:t,app,idx});
           });
         } else if(val?.status){
-          const showThis = inWeek || (showPendingAllTime && val.status==='pending');
+          const showThis = inWeek || (showPendingAllTime && (val.status==='pending'||val.status==='cancelRequested'));
           if(!showThis) return;
           if(t.key==='holiday' && val.workDate){
             const holId=name+'_'+val.workDate+'_'+(val.submittedDate||dateKey);
@@ -5145,6 +5237,7 @@ function renderApprovalList() {
     pending:'<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;background:#FFF3CD;color:#FF9500;">⏳ 承認待ち</span>',
     approved:'<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;background:#E8F9EF;color:#05A847;">✅ 承認済み</span>',
     rejected:'<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;background:#FFE8E6;color:var(--danger);">🚫 却下</span>',
+    cancelRequested:'<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;background:#F3E8FF;color:#7B2FBE;">🔴 取消申請中</span>',
     done:    '<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;background:#E8F9EF;color:#05A847;">✅ 対応済み</span>',
     corr_pending:'<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;background:#FFF3CD;color:#FF9500;">⏳ 未対応</span>',
   };
@@ -5173,7 +5266,10 @@ function renderApprovalList() {
       const idxArg=idx!==null?`,${idx}`:'';
       const deleteBtn=`<button style="padding:6px 14px;border-radius:8px;border:1px solid var(--danger);font-size:12px;font-weight:700;cursor:pointer;background:transparent;color:var(--danger);margin-left:6px;" onclick="revokeApplication('${name}','${dateKey}','${type}'${idxArg})">🗑️ 削除</button>`;
       let actionHtml='';
-      if(app.status==='approved'){
+      if(app.status==='cancelRequested'){
+        // 取消申請：承認で削除+スプレッドシート消去、却下で approved に戻す
+        actionHtml=`<div class="approval-buttons"><button class="btn-approve" style="background:#7B2FBE;" onclick="approveApplication('${name}','${dateKey}','${type}'${idxArg})">✅ 取消を承認</button><button class="btn-reject" onclick="showRejectModal('${name}','${dateKey}','${type}'${idxArg})">🚫 取消を却下</button>${deleteBtn}</div>`;
+      } else if(app.status==='approved'){
         actionHtml=`<div class="approval-buttons"><button style="padding:8px 18px;border-radius:10px;border:none;font-weight:700;font-size:13px;cursor:pointer;background:#F2F2F7;color:var(--danger);" onclick="revokeApplication('${name}','${dateKey}','${type}'${idxArg})">🗑️ 承認取り消し・削除</button></div>`;
       } else if(app.status==='rejected'){
         actionHtml=`<div class="approval-buttons">${deleteBtn}</div>`;

@@ -1375,13 +1375,9 @@ function fetchAllFromGAS(onDone, silent) {
               wRec.holiday = wHolArr;
             });
           }
-          // ケース2: submittedDate が dk と異なる（旧コードが勤務日行に誤書き込みしたデータ）→ このレコードから除去
-          // 正しいデータは submittedDate 行にあるので、ここには保存しない
+          // ケース2: workDate が dk と異なるものはケース1で移動済みなので除去
           rec.holiday = rec.holiday.filter(h =>
-            // workDate !== dk のものも除去（ケース1で移動済み）
-            (!h.workDate || h.workDate === dk) &&
-            // submittedDate が dk と異なるのも除去（roguecopy）
-            (!h.submittedDate || h.submittedDate === dk)
+            !h.workDate || h.workDate === dk
           );
           if (rec.holiday.length === 0) rec.holiday = null;
         }
@@ -2214,8 +2210,9 @@ function cancelOt() {
   if (!rec.ot || rec.ot.status === 'rejected') { showToast('取り消しできる申請がありません'); return; }
   if (!confirm('残業申請を取り消しますか？')) return;
   rec.ot = null;
+  recordActedField_(currentUser, todayKey(), 'ot'); // fetch上書き保護
   saveData(); renderAll();
-  syncRecordToGAS(currentUser, todayKey());
+  syncRecordToGAS(currentUser, todayKey(), null, ['ot']);
   showToast('🗑️ 残業申請を取り消しました');
 }
 
@@ -2558,8 +2555,9 @@ function cancelEarly() {
   if (!rec.early || rec.early.status === 'rejected') { showToast('取り消しできる申請がありません'); return; }
   if (!confirm('早出申請を取り消しますか？')) return;
   rec.early = null;
+  recordActedField_(currentUser, todayKey(), 'early'); // fetch上書き保護
   saveData(); renderAll();
-  syncRecordToGAS(currentUser, todayKey());
+  syncRecordToGAS(currentUser, todayKey(), null, ['early']);
   showToast('🗑️ 早出申請を取り消しました');
 }
 
@@ -2979,10 +2977,9 @@ function submitHoliday() {
   function _applyHolEarlyOt(rec) {
     const _appAt = Date.now();
     if (hasEarly && earlyStart) {
-      if (!Array.isArray(rec.early)) rec.early = rec.early ? [rec.early] : [];
-      const earlyDup = rec.early.find(function(e){ return e.status !== 'rejected' && e.startTime === earlyStart; });
-      if (!earlyDup) {
-        rec.early = [{ startTime: earlyStart, status:'pending', appliedAt:_appAt, approvedBy:null, approvedAt:null, comment:'' }];
+      // early は単一オブジェクト（配列ではない）
+      if (!rec.early || rec.early.status === 'rejected') {
+        rec.early = { startTime: earlyStart, status:'pending', appliedAt:_appAt, approvedBy:null, approvedAt:null, comment:'' };
       }
     }
     if (hasOt && otEnd) {

@@ -730,16 +730,9 @@
         <span style="font-weight:600;">⏰ 早出申請を同時に行う</span>
       </label>
       <div id="holidayEarlyDetail" style="display:none;margin-top:10px;">
-        <div style="display:flex;gap:8px;align-items:flex-end;">
-          <div style="flex:1;">
-            <label style="font-size:12px;color:var(--subtext);margin-bottom:4px;display:block;">早出開始時間</label>
-            <select id="holidayEarlyStart" onchange="updateHolidayEarlyEndOptions()" style="width:100%;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;background:var(--card);color:var(--text);"></select>
-          </div>
-          <div style="flex:1;">
-            <label style="font-size:12px;color:var(--subtext);margin-bottom:4px;display:block;">早出終了時間</label>
-            <select id="holidayEarlyEnd" style="width:100%;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;background:var(--card);color:var(--text);"></select>
-          </div>
-        </div>
+        <label>早出開始時間</label>
+        <select id="holidayEarlyStart" style="width:100%;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;background:var(--card);color:var(--text);"></select>
+        <div style="font-size:12px;color:var(--subtext);margin-top:4px;">終了時間：8:00 固定</div>
       </div>
     </div>
     <!-- 残業申請（任意） -->
@@ -2956,7 +2949,6 @@ function showHolidayModal() {
   document.getElementById('holidayHasEarly').checked = false;
   document.getElementById('holidayEarlyDetail').style.display = 'none';
   buildTimeSel15('holidayEarlyStart', false, '07:00');
-  updateHolidayEarlyEndOptions('08:00');
   document.getElementById('holidayHasOt').checked = false;
   document.getElementById('holidayOtDetail').style.display = 'none';
   buildTimeSel15('holidayOtEnd', false, '19:00');
@@ -2998,11 +2990,9 @@ function showHolidayReapplyModal(dateKey, idx) {
     document.getElementById('holidayHasEarly').checked = true;
     document.getElementById('holidayEarlyDetail').style.display = '';
     buildTimeSel15('holidayEarlyStart', false, _reapplyEarly.startTime || '07:00');
-    updateHolidayEarlyEndOptions(_reapplyEarly.endTime || '08:00');
   } else {
     document.getElementById('holidayHasEarly').checked = false;
     document.getElementById('holidayEarlyDetail').style.display = 'none';
-    updateHolidayEarlyEndOptions('08:00');
     buildTimeSel15('holidayEarlyStart', false, '07:00');
   }
   if (_reapplyOt && _reapplyOt.status !== 'rejected') {
@@ -3018,33 +3008,8 @@ function showHolidayReapplyModal(dateKey, idx) {
 }
 
 function toggleHolidayEarly() {
-  const show = document.getElementById('holidayHasEarly').checked;
-  document.getElementById('holidayEarlyDetail').style.display = show ? '' : 'none';
-  if (show) updateHolidayEarlyEndOptions();
-}
-function updateHolidayEarlyEndOptions(keepEnd) {
-  const startVal = document.getElementById('holidayEarlyStart').value;
-  const endSel   = document.getElementById('holidayEarlyEnd');
-  const prevEnd  = keepEnd || endSel.value;
-  endSel.innerHTML = '';
-  for (let h = 6; h <= 22; h++) {
-    for (const m of [0, 15, 30, 45]) {
-      if (h === 22 && m > 0) continue;
-      const label = String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
-      if (label <= startVal) continue; // 開始時間より後のみ
-      const opt = document.createElement('option');
-      opt.value = label; opt.textContent = label;
-      if (label === prevEnd) opt.selected = true;
-      endSel.appendChild(opt);
-    }
-  }
-  // デフォルトは 08:00（開始が 08:00 以上なら次の選択肢）
-  if (!endSel.value && endSel.options.length > 0) {
-    const target = '08:00';
-    const opts = Array.from(endSel.options);
-    const found = opts.find(o => o.value >= target);
-    if (found) found.selected = true;
-  }
+  document.getElementById('holidayEarlyDetail').style.display =
+    document.getElementById('holidayHasEarly').checked ? '' : 'none';
 }
 function toggleHolidayOt() {
   document.getElementById('holidayOtDetail').style.display =
@@ -3067,7 +3032,7 @@ function submitHoliday() {
   // 早出・残業（任意）
   const hasEarly    = document.getElementById('holidayHasEarly').checked;
   const earlyStart  = hasEarly ? document.getElementById('holidayEarlyStart').value : null;
-  const earlyEnd    = hasEarly ? document.getElementById('holidayEarlyEnd').value   : null;
+  const earlyEnd    = '08:00'; // 終了時間は 8:00 固定
   const hasOt       = document.getElementById('holidayHasOt').checked;
   const otEnd       = hasOt   ? document.getElementById('holidayOtEnd').value   : null;
   if (!workDate)  { showToast('出勤日を選択してください'); return; }
@@ -3076,7 +3041,7 @@ function submitHoliday() {
   if (!reason)    { showToast('理由を入力してください'); return; }
   if (wantComp && !compDate) { showToast('振替希望日を入力してください'); return; }
   if (hasEarly && earlyStart && earlyStart >= startTime) { showToast('早出開始時間は勤務開始時間より前にしてください'); return; }
-  if (hasEarly && earlyStart && earlyEnd && earlyEnd <= earlyStart) { showToast('早出終了時間は開始時間より後にしてください'); return; }
+
   if (hasOt && otEnd && otEnd <= endTime) { showToast('残業予定終了時間は勤務終了時間より後にしてください'); return; }
 
   // 早出・残業申請を rec に追加するヘルパー

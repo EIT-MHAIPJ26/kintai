@@ -5178,7 +5178,7 @@ function renderApprovalList() {
       } else if(app.status==='rejected'){
         actionHtml=`<div class="approval-buttons">${deleteBtn}</div>`;
       } else if(isSelf){
-        actionHtml=`<div class="approval-done" style="background:#F2F2F7;color:var(--subtext);">⏳ 他の管理者の承認待ちです</div>`;
+        actionHtml=`<div class="approval-done" style="background:#F2F2F7;color:var(--subtext);display:flex;align-items:center;justify-content:space-between;">⏳ 他の管理者の承認待ちです${deleteBtn}</div>`;
       } else if(type==='otExt'){
         actionHtml=`<div class="approval-buttons"><button class="btn-approve" onclick="approveOtExt('${name}','${dateKey}')">✅ 承認</button><button class="btn-reject" onclick="showRejectModal('${name}','${dateKey}','otExt')">🚫 却下</button>${deleteBtn}</div>`;
       } else {
@@ -5238,7 +5238,8 @@ function renderApprovalList() {
       } else if(lb.status==='rejected'){
         lunchActionHtml=`<div class="approval-buttons"><button style="padding:6px 14px;border-radius:8px;border:1px solid var(--danger);font-size:12px;font-weight:700;cursor:pointer;background:transparent;color:var(--danger);" onclick="(()=>{const r=getRecByKey('${name}','${dateKey}');delete r.lunchBreak;saveData();syncRecordToGAS('${name}','${dateKey}');renderApprovalList();renderApprovalTab();showToast('削除しました');})()">🗑️ 削除</button></div>`;
       } else if(isSelf){
-        lunchActionHtml=`<div class="approval-done" style="background:#F2F2F7;color:var(--subtext);">⏳ 他の管理者の承認待ちです</div>`;
+        const lunchDelBtn=`<button style="padding:6px 14px;border-radius:8px;border:1px solid var(--danger);font-size:12px;font-weight:700;cursor:pointer;background:transparent;color:var(--danger);margin-left:6px;" onclick="(()=>{const r=getRecByKey('${name}','${dateKey}');delete r.lunchBreak;saveData();syncRecordToGAS('${name}','${dateKey}',null,['lunchBreak']);renderApprovalList();renderApprovalTab();showToast('削除しました');})()">🗑️ 削除</button>`;
+        lunchActionHtml=`<div class="approval-done" style="background:#F2F2F7;color:var(--subtext);display:flex;align-items:center;justify-content:space-between;">⏳ 他の管理者の承認待ちです${lunchDelBtn}</div>`;
       } else {
         lunchActionHtml=`<div class="approval-buttons"><button class="btn-approve" onclick="approveLunchBreak('${name}','${dateKey}')">✅ 承認</button><button class="btn-reject" onclick="showLunchRejectModal('${name}','${dateKey}')">🚫 却下</button></div>`;
       }
@@ -5295,11 +5296,22 @@ function renderApprovalList() {
   });
 }
 
-// 管理者による承認取り消し
+// 管理者による承認取り消し・削除
 function revokeApplication(userName, dateKey, type, idx) {
   const rec = getRecByKey(userName, dateKey);
   const typeName = APP_TYPES.find(t=>t.key===type)?.label || type;
-  if (!confirm(userName+'さんの'+typeName+'の承認を取り消しますか？')) return;
+  // 申請のステータス確認
+  let appStatus = null;
+  if (idx !== undefined && idx !== null && idx !== '') {
+    const i = parseInt(idx);
+    appStatus = Array.isArray(rec[type]) && rec[type][i] ? rec[type][i].status : null;
+  } else {
+    appStatus = type === 'otExt' ? rec.ot?.extension?.status : rec[type]?.status;
+  }
+  const confirmMsg = appStatus === 'approved'
+    ? userName+'さんの'+typeName+'の承認を取り消して削除しますか？'
+    : userName+'さんの'+typeName+'を削除しますか？';
+  if (!confirm(confirmMsg)) return;
   if (idx !== undefined && idx !== null && idx !== '') {
     const i = parseInt(idx);
     if (Array.isArray(rec[type]) && rec[type][i]) {
@@ -5329,7 +5341,10 @@ function revokeApplication(userName, dateKey, type, idx) {
   else if (type === 'paid'    && Array.isArray(rec.paid)    && rec.paid.length    === 0) _cfRevoke = ['paid'];
   else if (type === 'holiday' && Array.isArray(rec.holiday) && rec.holiday.length === 0) _cfRevoke = ['holiday'];
   syncRecordToGAS(userName, dateKey, null, _cfRevoke.length ? _cfRevoke : undefined);
-  showToast('🗑️ '+userName+'さんの'+typeName+'の承認を取り消しました');
+  const toastMsg = appStatus === 'approved'
+    ? '🗑️ '+userName+'さんの'+typeName+'の承認を取り消しました'
+    : '🗑️ '+userName+'さんの'+typeName+'を削除しました';
+  showToast(toastMsg);
 }
 
 function switchTab(tab) {

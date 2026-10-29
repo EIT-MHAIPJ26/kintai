@@ -2553,11 +2553,25 @@ function approveChangeReq(name, dateKey, appType, appIdx) {
 
   if (app.changeReq.reqType === 'cancel') {
     if (!confirm(`${name}さんの${typeLabel}をキャンセルしてよろしいですか？`)) return;
+    let _clearFields;
     if (idx !== null && Array.isArray(val)) {
       rec[appType].splice(idx, 1);
+      // 配列が空になった場合はGASに明示削除を指示
+      const _isEmpty = !Array.isArray(rec[appType]) || rec[appType].length === 0;
+      if (_isEmpty) {
+        _clearFields = [appType];
+        recordActedField_(name, dateKey, appType);
+      }
     } else {
       rec[appType] = null;
+      _clearFields = [appType];
+      recordActedField_(name, dateKey, appType);
     }
+    _recentlyActed[name+'|'+dateKey] = { at: Date.now(), fields: [appType] };
+    saveData(); renderAll();
+    syncRecordToGAS(name, dateKey, null, _clearFields);
+    showToast(`✅ ${name}さんの${typeLabel}のキャンセルを承認しました`);
+    return;
   } else {
     app.changeReq.status    = 'approved';
     app.changeReq.approvedBy= currentUser;

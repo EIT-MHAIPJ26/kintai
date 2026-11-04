@@ -406,6 +406,7 @@
     <div class="pairs-list" id="pairsList" style="display:none"></div>
     <div id="otStatusBar" style="display:none"></div>
     <div id="otExtStatusBar" style="display:none"></div>
+    <div id="otLateNightStatusBar" style="display:none"></div>
     <div id="earlyStatusBar" style="display:none"></div>
     <div id="paidStatusBar" style="display:none"></div>
     <div id="holidayStatusBar" style="display:none"></div>
@@ -592,8 +593,19 @@
         現在の承認時刻：<strong id="otReapplyCurrentEnd" style="color:var(--purple);">--:--</strong>
       </div>
     </div>
-    <label>残業予定終了時刻</label>
+    <label>残業予定終了時刻（〜22:00）</label>
     <select id="otTime"></select>
+    <!-- 深夜残業申請（任意） -->
+    <div style="margin-top:8px;padding:10px;background:var(--bg);border-radius:10px;border:1.5px solid var(--border);">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0;">
+        <input type="checkbox" id="otHasLateNight" onchange="toggleOtLateNight()">
+        <span style="font-weight:600;">🌃 深夜残業申請を同時に行う（22:00〜）</span>
+      </label>
+      <div id="otLateNightDetail" style="display:none;margin-top:10px;">
+        <label style="font-size:12px;color:var(--subtext);margin-bottom:4px;display:block;">深夜残業終了時刻（22:00〜29:00）</label>
+        <select id="otLateNightTime" style="width:100%;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;background:var(--card);color:var(--text);"></select>
+      </div>
+    </div>
     <label>残業理由</label>
     <textarea id="otReason" placeholder="残業の理由を入力してください"></textarea>
     <!-- 再申請時のみ表示 -->
@@ -2127,8 +2139,8 @@ function approveApplication(userName, dateKey, type, idx) {
 function buildOtTimes() {
   const sel = document.getElementById('otTime');
   sel.innerHTML = '';
-  for (let h=15; h<=24; h++) {
-    const mins = h===15?[15,30,45]:h===24?[0]:[0,15,30,45];
+  for (let h=15; h<=22; h++) {
+    const mins = h===15?[15,30,45]:h===22?[0]:[0,15,30,45];
     mins.forEach(m => {
       const opt = document.createElement('option');
       const label = String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');
@@ -2138,6 +2150,28 @@ function buildOtTimes() {
   }
 }
 buildOtTimes();
+
+function buildLateNightOtTimes(setValue) {
+  const sel = document.getElementById('otLateNightTime');
+  if (!sel) return;
+  sel.innerHTML = '';
+  for (let h=22; h<=29; h++) {
+    const mins = h===22?[15,30,45]:h===29?[0]:[0,15,30,45];
+    mins.forEach(m => {
+      const opt = document.createElement('option');
+      const label = String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');
+      opt.value = label; opt.textContent = label;
+      if (setValue && label === setValue) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  }
+}
+
+function toggleOtLateNight() {
+  const show = document.getElementById('otHasLateNight').checked;
+  document.getElementById('otLateNightDetail').style.display = show ? '' : 'none';
+  if (show) buildLateNightOtTimes();
+}
 
 let _otReapply = null; // { dateKey } 残業再申請時にセット
 
@@ -2161,7 +2195,11 @@ function showOtModal() {
   document.getElementById('otReapplyReasonSection').style.display = 'none';
   document.getElementById('otReapplyReason').value = '';
   document.getElementById('otReason').value = '';
+  buildOtTimes();
   if (rec.ot?.plannedEnd) document.getElementById('otTime').value = rec.ot.plannedEnd;
+  // 深夜残業フィールド初期化
+  document.getElementById('otHasLateNight').checked = false;
+  document.getElementById('otLateNightDetail').style.display = 'none';
   document.getElementById('modalOt').classList.add('show');
 }
 
@@ -2176,18 +2214,18 @@ function showOtReapplyModal(dateKey) {
   document.getElementById('otReapplyReasonSection').style.display = '';
   document.getElementById('otReapplyReason').value = '';
   document.getElementById('otReason').value = rec.ot.reason || '';
-  // 時間帯を全範囲（17:30〜24:00）で再生成し、現在値を選択
-  const sel = document.getElementById('otTime');
-  sel.innerHTML = '';
-  for (let h = 15; h <= 24; h++) {
-    const mins = h === 15 ? [15,30,45] : h === 24 ? [0] : [0,15,30,45];
-    mins.forEach(m => {
-      const opt = document.createElement('option');
-      const label = String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');
-      opt.value = label; opt.textContent = label;
-      if (label === rec.ot.plannedEnd) opt.selected = true;
-      sel.appendChild(opt);
-    });
+  // 時間帯を全範囲（15:15〜22:00）で再生成し、現在値を選択
+  buildOtTimes();
+  if (rec.ot.plannedEnd) document.getElementById('otTime').value = rec.ot.plannedEnd;
+  // 深夜残業フィールド（再申請時は既存値を反映）
+  const _lnReapply = rec.ot.lateNight;
+  if (_lnReapply && _lnReapply.status !== 'rejected') {
+    document.getElementById('otHasLateNight').checked = true;
+    document.getElementById('otLateNightDetail').style.display = '';
+    buildLateNightOtTimes(_lnReapply.plannedEnd);
+  } else {
+    document.getElementById('otHasLateNight').checked = false;
+    document.getElementById('otLateNightDetail').style.display = 'none';
   }
   document.getElementById('modalOt').classList.add('show');
 }
@@ -2196,6 +2234,9 @@ function submitOt() {
   const plannedEnd = document.getElementById('otTime').value;
   const reason = document.getElementById('otReason').value.trim();
   if (!reason) { showToast('残業理由を入力してください'); return; }
+  const hasLateNight  = document.getElementById('otHasLateNight').checked;
+  const lateNightEnd  = hasLateNight ? document.getElementById('otLateNightTime').value : null;
+  const _appAt = Date.now();
 
   if (_otReapply) {
     const reapplyReason = document.getElementById('otReapplyReason').value.trim();
@@ -2203,17 +2244,25 @@ function submitOt() {
     const ctx = _otReapply;
     _otReapply = null;
     const rec = getRecByKey(currentUser, ctx.dateKey);
-    rec.ot = { plannedEnd, reason, reapplyReason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
+    rec.ot = { plannedEnd, reason, reapplyReason, status:'pending', appliedAt:_appAt, approvedBy:null, approvedAt:null, comment:'' };
+    if (hasLateNight && lateNightEnd) {
+      rec.ot.lateNight = { plannedEnd: lateNightEnd, status:'pending', appliedAt:_appAt, approvedBy:null, approvedAt:null, comment:'' };
+    }
     saveData(); renderAll(); hideModal('modalOt');
-    notifyAdminsViaGAS('ot', plannedEnd+'まで （再申請：'+reapplyReason+'）', ctx.dateKey);
+    const _detail = plannedEnd+'まで'+(hasLateNight&&lateNightEnd?' 深夜:'+lateNightEnd+'まで':'')+' （再申請：'+reapplyReason+'）';
+    notifyAdminsViaGAS('ot', _detail, ctx.dateKey);
     showToast('🔄 残業を再申請しました（'+plannedEnd+'まで）');
     return;
   }
 
   const rec = getTodayRec();
-  rec.ot = { plannedEnd, reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
+  rec.ot = { plannedEnd, reason, status:'pending', appliedAt:_appAt, approvedBy:null, approvedAt:null, comment:'' };
+  if (hasLateNight && lateNightEnd) {
+    rec.ot.lateNight = { plannedEnd: lateNightEnd, status:'pending', appliedAt:_appAt, approvedBy:null, approvedAt:null, comment:'' };
+  }
   saveData(); renderAll(); hideModal('modalOt');
-  notifyAdminsViaGAS('ot', plannedEnd+'まで');
+  const _lnDetail = plannedEnd+'まで'+(hasLateNight&&lateNightEnd?' 深夜:'+lateNightEnd+'まで':'');
+  notifyAdminsViaGAS('ot', _lnDetail);
   showToast('📋 残業申請を送信しました（'+plannedEnd+'まで）');
 }
 
@@ -2307,6 +2356,30 @@ function approveOtExt(userName, dateKey) {
   saveData(); renderAll();
   syncRecordToGAS(userName, dateKey);
   showToast('✅ '+userName+'の延長申請を承認しました（'+rec.ot.plannedEnd+'まで）');
+}
+
+function cancelOtLateNight() {
+  if (!currentUser) return;
+  const rec = getTodayRec();
+  if (!rec.ot?.lateNight || rec.ot.lateNight.status === 'rejected') { showToast('取り消しできる深夜残業申請がありません'); return; }
+  if (!confirm('深夜残業申請を取り消しますか？')) return;
+  delete rec.ot.lateNight;
+  recordActedField_(currentUser, todayKey(), 'ot');
+  saveData(); renderAll();
+  syncRecordToGAS(currentUser, todayKey());
+  showToast('🗑️ 深夜残業申請を取り消しました');
+}
+
+function approveOtLateNight(userName, dateKey) {
+  const rec = getRecByKey(userName, dateKey);
+  if (!rec?.ot?.lateNight) return;
+  rec.ot.lateNight.status = 'approved';
+  rec.ot.lateNight.approvedBy = currentUser;
+  rec.ot.lateNight.approvedAt = Date.now();
+  _recentlyActed[userName+'|'+dateKey] = { at: Date.now(), fields: ['ot'] };
+  saveData(); renderAll();
+  syncRecordToGAS(userName, dateKey);
+  showToast('✅ '+userName+'の深夜残業申請を承認しました（'+rec.ot.lateNight.plannedEnd+'まで）');
 }
 
 // 有給・休日出勤の取り消し（配列型）
@@ -2664,6 +2737,12 @@ function confirmReject() {
       rec.ot.extension.status='rejected'; rec.ot.extension.approvedBy=currentUser;
       rec.ot.extension.approvedAt=Date.now(); rec.ot.extension.comment=comment;
     }
+  } else if (type === 'otLateNight') {
+    // 深夜残業申請の却下
+    if (rec?.ot?.lateNight) {
+      rec.ot.lateNight.status='rejected'; rec.ot.lateNight.approvedBy=currentUser;
+      rec.ot.lateNight.approvedAt=Date.now(); rec.ot.lateNight.comment=comment;
+    }
   } else if (idxStr !== undefined && idxStr !== '') {
     const i = parseInt(idxStr);
     if (Array.isArray(rec?.[type]) && rec[type][i]) {
@@ -2683,7 +2762,8 @@ function confirmReject() {
       }
     }
   }
-  _recentlyActed[userName+'|'+dateKey] = { at: Date.now(), fields: [type === 'otExt' ? 'ot' : type] };
+  const _rejectFieldKey = (type === 'otExt' || type === 'otLateNight') ? 'ot' : type;
+  _recentlyActed[userName+'|'+dateKey] = { at: Date.now(), fields: [_rejectFieldKey] };
   pendingRejectKey = null; saveData(); renderAll(); hideModal('rejectModal');
   if (type === 'holiday') {
     const _rejRec = getRecByKey(userName, dateKey);
@@ -4140,7 +4220,7 @@ function renderStatus() {
 
   // 申請ボタン・ステータスバーの初期化ヘルパー
   function hideAllAppBars() {
-    ['otStatusBar','otExtStatusBar','earlyStatusBar','paidStatusBar','holidayStatusBar','miscStatusBar'].forEach(id=>{
+    ['otStatusBar','otExtStatusBar','otLateNightStatusBar','earlyStatusBar','paidStatusBar','holidayStatusBar','miscStatusBar'].forEach(id=>{
       document.getElementById(id).style.display='none';
     });
   }
@@ -4308,6 +4388,26 @@ function renderStatus() {
       extBar.style.display = '';
     } else {
       extBar.style.display = 'none';
+    }
+    // 深夜残業バー
+    const lnBar = document.getElementById('otLateNightStatusBar');
+    if (lnBar) {
+      const ln = rec.ot.lateNight;
+      if (ln) {
+        const lnIcons  = {pending:'⏳', approved:'✅', rejected:'🚫'};
+        const lnLabels = {pending:'承認待ち', approved:'承認済み', rejected:'却下'};
+        let lnTxt = lnIcons[ln.status]+' 🌃 深夜残業申請 '+lnLabels[ln.status]+' ／ '+ln.plannedEnd+'まで';
+        if (ln.status==='rejected' && ln.comment) lnTxt += '（'+ln.comment+'）';
+        const lnCancelBtn = ln.status==='pending'
+          ? `<button onclick="cancelOtLateNight()" style="margin-left:8px;font-size:11px;padding:3px 9px;border:1px solid currentColor;border-radius:6px;background:transparent;color:inherit;cursor:pointer;opacity:.8;">取り消し</button>`
+          : '';
+        lnBar.className = 'ot-status-bar '+(ln.status==='approved'?'approved':ln.status==='rejected'?'rejected':'pending');
+        lnBar.style.marginTop = '6px';
+        lnBar.innerHTML = lnTxt + lnCancelBtn;
+        lnBar.style.display = '';
+      } else {
+        lnBar.style.display = 'none';
+      }
     }
   } else {
     otBar.style.display = 'none';
@@ -5217,6 +5317,9 @@ function renderApprovalList() {
       if(rec.ot?.extension?.status && (inWeek || (showPendingAllTime && rec.ot.extension.status==='pending'))){
         allItems.push({kind:'app',name,dateKey,rec,type:'otExt',typeInfo:{key:'otExt',icon:'⏰',label:'残業延長申請',barClass:'pending',color:'var(--purple)'},app:rec.ot.extension,idx:null});
       }
+      if(rec.ot?.lateNight?.status && (inWeek || (showPendingAllTime && rec.ot.lateNight.status==='pending'))){
+        allItems.push({kind:'app',name,dateKey,rec,type:'otLateNight',typeInfo:{key:'otLateNight',icon:'🌃',label:'深夜残業申請',barClass:'pending',color:'#1a1a2e'},app:rec.ot.lateNight,idx:null});
+      }
       // 修正依頼
       if(Array.isArray(rec.corrReq)){
         rec.corrReq.forEach((req,idx)=>{
@@ -5274,6 +5377,7 @@ function renderApprovalList() {
         : '';
       if(type==='ot')           detailHtml=`${typeInfo.icon} 残業予定 <strong>${app.plannedEnd}</strong>まで`;
       else if(type==='otExt')   detailHtml=`${typeInfo.icon} <strong>${rec.ot?.plannedEnd}→${app.plannedEnd}</strong>まで延長`;
+      else if(type==='otLateNight') detailHtml=`🌃 深夜残業申請 <strong>${app.plannedEnd}</strong>まで`;
       else if(type==='early')   detailHtml=`${typeInfo.icon} 早出 <strong>${app.startTime}〜${app.endTime||'8:00'}</strong>${compBadge(app)}`;
       else if(type==='paid')    detailHtml=`${typeInfo.icon} 有給 <strong>${app.startTime}〜${app.endTime}</strong>${compBadge(app)}`;
       else if(type==='holiday') detailHtml=`${typeInfo.icon} 休日出勤 <strong>${app.startTime||''}〜${app.endTime||''}</strong> ${app.wantComp?`振替希望：${app.compDate}${app.compTime?' '+app.compTime:''}`:'（振替なし）'}`;
@@ -5295,6 +5399,8 @@ function renderApprovalList() {
         actionHtml=`<div class="approval-done" style="background:#F2F2F7;color:var(--subtext);display:flex;align-items:center;justify-content:space-between;">⏳ 他の管理者の承認待ちです${deleteBtn}</div>`;
       } else if(type==='otExt'){
         actionHtml=`<div class="approval-buttons"><button class="btn-approve" onclick="approveOtExt('${name}','${dateKey}')">✅ 承認</button><button class="btn-reject" onclick="showRejectModal('${name}','${dateKey}','otExt')">🚫 却下</button>${deleteBtn}</div>`;
+      } else if(type==='otLateNight'){
+        actionHtml=`<div class="approval-buttons"><button class="btn-approve" onclick="approveOtLateNight('${name}','${dateKey}')">✅ 承認</button><button class="btn-reject" onclick="showRejectModal('${name}','${dateKey}','otLateNight')">🚫 却下</button>${deleteBtn}</div>`;
       } else {
         actionHtml=`<div class="approval-buttons"><button class="btn-approve" onclick="approveApplication('${name}','${dateKey}','${type}'${idxArg})">✅ 承認</button><button class="btn-reject" onclick="showRejectModal('${name}','${dateKey}','${type}'${idxArg})">🚫 却下</button>${deleteBtn}</div>`;
       }
@@ -5420,7 +5526,7 @@ function revokeApplication(userName, dateKey, type, idx) {
     const i = parseInt(idx);
     appStatus = Array.isArray(rec[type]) && rec[type][i] ? rec[type][i].status : null;
   } else {
-    appStatus = type === 'otExt' ? rec.ot?.extension?.status : rec[type]?.status;
+    appStatus = type === 'otExt' ? rec.ot?.extension?.status : type === 'otLateNight' ? rec.ot?.lateNight?.status : rec[type]?.status;
   }
   const confirmMsg = appStatus === 'approved'
     ? userName+'さんの'+typeName+'の承認を取り消して削除しますか？'
@@ -5441,16 +5547,20 @@ function revokeApplication(userName, dateKey, type, idx) {
   } else {
     if (type === 'otExt') {
       if (rec.ot?.extension) rec.ot.extension = null;
+    } else if (type === 'otLateNight') {
+      if (rec.ot?.lateNight) delete rec.ot.lateNight;
     } else {
       rec[type] = null;
     }
   }
-  _recentlyActed[userName+'|'+dateKey] = { at: Date.now(), fields: [type === 'otExt' ? 'ot' : type] };
+  const _revokeFieldKey = (type === 'otExt' || type === 'otLateNight') ? 'ot' : type;
+  _recentlyActed[userName+'|'+dateKey] = { at: Date.now(), fields: [_revokeFieldKey] };
   saveData(); renderAll();
   // GASは null/空配列を受け取っても既存データを保持する設計のため、
   // clearFields で明示的に削除を指示する
   var _cfRevoke = [];
   if (type === 'ot')    _cfRevoke = ['ot'];
+  else if (type === 'otLateNight') _cfRevoke = []; // lateNightはot配下なのでotはclearしない（otは残す）
   else if (type === 'early') _cfRevoke = ['early'];
   else if (type === 'paid'    && Array.isArray(rec.paid)    && rec.paid.length    === 0) _cfRevoke = ['paid'];
   else if (type === 'holiday' && Array.isArray(rec.holiday) && rec.holiday.length === 0) _cfRevoke = ['holiday'];

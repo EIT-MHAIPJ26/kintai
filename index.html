@@ -527,7 +527,10 @@
     <div class="records-card">
       <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;">
         <span>✅ 承認管理</span>
-        <button onclick="if(gasUrl)fetchAllFromGAS();" id="approvalFetchBtn" style="font-size:12px;padding:4px 10px;border:1.5px solid var(--border);border-radius:8px;background:white;color:var(--subtext);cursor:pointer;">🔄 更新</button>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <button onclick="showAdminOtInputModal()" style="font-size:12px;padding:4px 10px;border:1.5px solid #7B2FBE;border-radius:8px;background:white;color:#7B2FBE;cursor:pointer;font-weight:700;">🕐 残業届代理入力</button>
+          <button onclick="if(gasUrl)fetchAllFromGAS();" id="approvalFetchBtn" style="font-size:12px;padding:4px 10px;border:1.5px solid var(--border);border-radius:8px;background:white;color:var(--subtext);cursor:pointer;">🔄 更新</button>
+        </div>
       </div>
       <!-- 週ナビゲーション -->
       <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin:4px 0 10px;">
@@ -1068,6 +1071,39 @@
     <div class="modal-buttons">
       <button class="btn-cancel" onclick="hideModal('modalLunchBreak')">キャンセル</button>
       <button class="btn-confirm" style="background:linear-gradient(135deg,#FF9500,#FFCC00);color:#fff;" onclick="submitLunchBreak()">申請する</button>
+    </div>
+  </div>
+</div>
+
+<!-- 管理者：過去残業代理入力モーダル -->
+<div class="modal-overlay" id="modalAdminOtInput" onclick="closeModalBg(event,'modalAdminOtInput')">
+  <div class="modal">
+    <h3>🕐 残業届 代理入力（管理者）</h3>
+    <label style="font-weight:700;font-size:13px;">メンバー</label>
+    <select id="adminOtMember" style="width:100%;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:14px;margin-top:5px;box-sizing:border-box;"></select>
+    <label style="font-weight:700;font-size:13px;margin-top:12px;display:block;">対象日付</label>
+    <input type="date" id="adminOtDate" style="width:100%;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:14px;margin-top:5px;box-sizing:border-box;">
+    <label style="font-weight:700;font-size:13px;margin-top:12px;display:block;">残業終了時刻（〜22:00）</label>
+    <select id="adminOtTime" style="width:100%;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:14px;margin-top:5px;box-sizing:border-box;"></select>
+    <!-- 深夜残業 -->
+    <div style="margin-top:10px;padding:10px;background:var(--bg);border-radius:10px;border:1.5px solid var(--border);">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0;">
+        <input type="checkbox" id="adminOtHasLateNight" onchange="toggleAdminOtLateNight()">
+        <span style="font-weight:600;font-size:13px;">🌃 深夜残業も入力する（22:00〜）</span>
+      </label>
+      <div id="adminOtLateNightDetail" style="display:none;margin-top:10px;">
+        <label style="font-size:12px;color:var(--subtext);">深夜残業終了時刻（22:00〜29:00）</label>
+        <select id="adminOtLateNightTime" style="width:100%;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:14px;margin-top:4px;box-sizing:border-box;"></select>
+      </div>
+    </div>
+    <label style="font-weight:700;font-size:13px;margin-top:12px;display:block;">理由</label>
+    <textarea id="adminOtReason" rows="2" placeholder="残業理由を入力してください" style="width:100%;border:1px solid var(--border);border-radius:8px;padding:8px;font-size:14px;margin-top:5px;box-sizing:border-box;resize:none;"></textarea>
+    <div style="margin-top:8px;padding:8px;background:#FFF8DC;border-radius:8px;font-size:12px;color:#8B6914;">
+      ⚠️ 管理者による代理入力は「承認済み」として登録されます
+    </div>
+    <div class="modal-buttons" style="margin-top:14px;">
+      <button class="btn-cancel" onclick="hideModal('modalAdminOtInput')">キャンセル</button>
+      <button class="btn-confirm purple" onclick="submitAdminOtInput()">登録する</button>
     </div>
   </div>
 </div>
@@ -2380,6 +2416,107 @@ function approveOtLateNight(userName, dateKey) {
   saveData(); renderAll();
   syncRecordToGAS(userName, dateKey);
   showToast('✅ '+userName+'の深夜残業申請を承認しました（'+rec.ot.lateNight.plannedEnd+'まで）');
+}
+
+// ── 管理者：過去残業代理入力 ──────────────────────────────────────
+function showAdminOtInputModal() {
+  if (!currentUser || !isAdmin(currentUser)) return;
+  // メンバー一覧を設定
+  const memberSel = document.getElementById('adminOtMember');
+  memberSel.innerHTML = '';
+  getUserNames().forEach(n => {
+    const opt = document.createElement('option');
+    opt.value = n; opt.textContent = n;
+    memberSel.appendChild(opt);
+  });
+  // 日付を今日に設定（max=今日）
+  const today = todayKey();
+  const dateInput = document.getElementById('adminOtDate');
+  dateInput.value = today;
+  dateInput.max = today;
+  // 時刻セレクト生成
+  const timeSel = document.getElementById('adminOtTime');
+  timeSel.innerHTML = '';
+  for (let h = 15; h <= 22; h++) {
+    const mins = h === 15 ? [15,30,45] : h === 22 ? [0] : [0,15,30,45];
+    mins.forEach(m => {
+      const opt = document.createElement('option');
+      const label = String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');
+      opt.value = label; opt.textContent = label;
+      timeSel.appendChild(opt);
+    });
+  }
+  // 深夜残業フィールド初期化
+  document.getElementById('adminOtHasLateNight').checked = false;
+  document.getElementById('adminOtLateNightDetail').style.display = 'none';
+  document.getElementById('adminOtReason').value = '';
+  document.getElementById('modalAdminOtInput').classList.add('show');
+}
+
+function toggleAdminOtLateNight() {
+  const show = document.getElementById('adminOtHasLateNight').checked;
+  document.getElementById('adminOtLateNightDetail').style.display = show ? '' : 'none';
+  if (show) {
+    const sel = document.getElementById('adminOtLateNightTime');
+    sel.innerHTML = '';
+    for (let h = 22; h <= 29; h++) {
+      const mins = h === 22 ? [15,30,45] : h === 29 ? [0] : [0,15,30,45];
+      mins.forEach(m => {
+        const opt = document.createElement('option');
+        const label = String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');
+        opt.value = label; opt.textContent = label;
+        sel.appendChild(opt);
+      });
+    }
+  }
+}
+
+function submitAdminOtInput() {
+  if (!currentUser || !isAdmin(currentUser)) return;
+  const targetName = document.getElementById('adminOtMember').value;
+  const dateKey    = document.getElementById('adminOtDate').value;
+  const plannedEnd = document.getElementById('adminOtTime').value;
+  const reason     = document.getElementById('adminOtReason').value.trim();
+  if (!dateKey) { showToast('日付を選択してください'); return; }
+  if (!reason)  { showToast('残業理由を入力してください'); return; }
+  const hasLateNight = document.getElementById('adminOtHasLateNight').checked;
+  const lateNightEnd = hasLateNight ? document.getElementById('adminOtLateNightTime').value : null;
+  if (!confirm(targetName+'さんの'+dateKey+'の残業届（'+plannedEnd+'まで）を承認済みとして登録しますか？')) return;
+  const _now = Date.now();
+  // 対象レコード取得（なければ作成）
+  if (!data.records[targetName]) data.records[targetName] = {};
+  if (!data.records[targetName][dateKey]) data.records[targetName][dateKey] = {};
+  const rec = data.records[targetName][dateKey];
+  // 既存のOT申請がある場合は上書き確認
+  if (rec.ot && rec.ot.status !== 'rejected') {
+    if (!confirm('既に残業申請があります（'+rec.ot.plannedEnd+'まで、'+rec.ot.status+'）。上書きしますか？')) return;
+  }
+  rec.ot = {
+    plannedEnd,
+    reason,
+    status: 'approved',
+    appliedAt: _now,
+    approvedBy: currentUser,
+    approvedAt: _now,
+    comment: '',
+    adminInput: true  // 管理者代理入力フラグ
+  };
+  if (hasLateNight && lateNightEnd) {
+    rec.ot.lateNight = {
+      plannedEnd: lateNightEnd,
+      status: 'approved',
+      appliedAt: _now,
+      approvedBy: currentUser,
+      approvedAt: _now,
+      comment: ''
+    };
+  }
+  _recentlyActed[targetName+'|'+dateKey] = { at: _now, fields: ['ot'] };
+  saveData(); renderAll();
+  hideModal('modalAdminOtInput');
+  syncRecordToGAS(targetName, dateKey);
+  const lnTxt = hasLateNight && lateNightEnd ? '（深夜:'+lateNightEnd+'まで）' : '';
+  showToast('✅ '+targetName+'さんの残業届を登録しました（'+plannedEnd+'まで'+lnTxt+'）');
 }
 
 // 有給・休日出勤の取り消し（配列型）

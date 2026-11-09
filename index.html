@@ -2364,7 +2364,7 @@ function submitOtExt() {
   if (!reason) { showToast('延長理由を入力してください'); return; }
   const rec = getTodayRec();
   if (!rec.ot || rec.ot.status !== 'approved') { showToast('承認済みの残業申請がありません'); return; }
-  rec.ot.extension = { plannedEnd, reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
+  rec.ot.extension = { plannedEnd, prevPlannedEnd: rec.ot.plannedEnd, reason, status:'pending', appliedAt:Date.now(), approvedBy:null, approvedAt:null, comment:'' };
   saveData(); renderAll(); hideModal('modalOtExt');
   notifyAdminsViaGAS('otExt', rec.ot.plannedEnd+'→'+plannedEnd+'まで延長');
   showToast('📋 延長申請を送信しました（'+plannedEnd+'まで）');
@@ -4515,7 +4515,8 @@ function renderStatus() {
     if (ext) {
       const extIcons  = {pending:'⏳', approved:'✅', rejected:'🚫'};
       const extLabels = {pending:'承認待ち', approved:'承認済み', rejected:'却下'};
-      let extTxt = extIcons[ext.status]+' 延長申請 '+extLabels[ext.status]+' ／ '+ext.plannedEnd+'まで';
+      const extFrom = ext.prevPlannedEnd ? ext.prevPlannedEnd+'→' : '';
+      let extTxt = extIcons[ext.status]+' 延長申請 '+extLabels[ext.status]+' ／ '+extFrom+ext.plannedEnd+'まで';
       if (ext.status==='rejected' && ext.comment) extTxt += '（'+ext.comment+'）';
       const extCancelBtn = ext.status==='pending'
         ? `<button onclick="cancelOtExt()" style="margin-left:8px;font-size:11px;padding:3px 9px;border:1px solid currentColor;border-radius:6px;background:transparent;color:inherit;cursor:pointer;opacity:.8;">取り消し</button>`
@@ -5536,7 +5537,7 @@ function renderApprovalList() {
         ? `　<span style="font-size:11px;background:#FFF0DC;color:#FF9500;padding:2px 6px;border-radius:5px;">振替希望：${a.compDate}${a.compTimeStart?' '+a.compTimeStart+(a.compTimeEnd?'〜'+a.compTimeEnd:''):''}${a.compTime?' '+a.compTime:''}</span>`
         : '';
       if(type==='ot')           detailHtml=`${typeInfo.icon} 残業予定 <strong>${app.plannedEnd}</strong>まで`;
-      else if(type==='otExt')   detailHtml=`${typeInfo.icon} <strong>${rec.ot?.plannedEnd}→${app.plannedEnd}</strong>まで延長`;
+      else if(type==='otExt')   detailHtml=`${typeInfo.icon} <strong>${app.prevPlannedEnd||rec.ot?.plannedEnd}→${app.plannedEnd}</strong>まで延長`;
       else if(type==='otLateNight') detailHtml=`🌃 深夜残業申請 <strong>${app.plannedEnd}</strong>まで`;
       else if(type==='early')   detailHtml=`${typeInfo.icon} 早出 <strong>${app.startTime}〜${app.endTime||'8:00'}</strong>${compBadge(app)}`;
       else if(type==='paid')    detailHtml=`${typeInfo.icon} 有給 <strong>${app.startTime}〜${app.endTime}</strong>${compBadge(app)}`;

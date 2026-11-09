@@ -3627,6 +3627,7 @@ function markCorrReqDone(name, dateKey, idx) {
   rec.corrReq[idx].status = 'done';
   rec.corrReq[idx].doneBy = currentUser;
   rec.corrReq[idx].doneAt = Date.now();
+  recordActedField_(name, dateKey, 'corrReq'); // ← フェッチ上書き保護
   saveData();
   // GASに同期（別端末でも反映されるよう）
   syncRecordToGAS(name, dateKey);
@@ -5326,8 +5327,28 @@ function renderApprovalTab() {
 }
 
 var adminApprovalWeekOffset = 0;
-var _recentlyActed = {}; // name|dateKey → {at:timestamp, fields:[...]} （管理者操作のレース条件対策）
-const _RECENTLY_ACTED_MS = 120000; // 2分間保護
+const _RECENTLY_ACTED_MS = 600000; // 10分間保護（GASの遅延・リトライを考慮）
+const _RECENTLY_ACTED_LS_KEY = 'kintai_recentlyActed_v2';
+
+// 起動時にlocalStorageから復元（ページリロード後も保護が続く）
+var _recentlyActed = (function() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(_RECENTLY_ACTED_LS_KEY) || '{}');
+    const now = Date.now();
+    // 期限切れエントリを除外して復元
+    Object.keys(stored).forEach(k => {
+      if (!stored[k].at || (now - stored[k].at >= _RECENTLY_ACTED_MS)) delete stored[k];
+    });
+    // Proxy: set 時に自動的に localStorage 保存
+    return new Proxy(stored, {
+      set(target, key, value) {
+        target[key] = value;
+        try { localStorage.setItem(_RECENTLY_ACTED_LS_KEY, JSON.stringify(target)); } catch(e) {}
+        return true;
+      }
+    });
+  } catch(e) { return {}; }
+})();
 
 // 操作したフィールドを記録（複数操作がある場合はマージ）
 function recordActedField_(name, dateKey, field) {
@@ -5336,6 +5357,8 @@ function recordActedField_(name, dateKey, field) {
   if (ex && (Date.now() - ex.at < _RECENTLY_ACTED_MS)) {
     ex.at = Date.now();
     if (ex.fields.indexOf(field) < 0) ex.fields.push(field);
+    // プロパティ更新後にProxyのsetをトリガー（内部オブジェクト変更のため手動保存）
+    _recentlyActed[key] = ex;
   } else {
     _recentlyActed[key] = {at: Date.now(), fields: [field]};
   }

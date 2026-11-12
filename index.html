@@ -529,6 +529,7 @@
         <span>✅ 承認管理</span>
         <div style="display:flex;gap:6px;align-items:center;">
           <button onclick="showAdminOtInputModal()" style="font-size:12px;padding:4px 10px;border:1.5px solid #7B2FBE;border-radius:8px;background:white;color:#7B2FBE;cursor:pointer;font-weight:700;">🕐 残業届代理入力</button>
+          <button onclick="sortSheetByDateManual()" id="sortSheetBtn" style="font-size:12px;padding:4px 10px;border:1.5px solid #05A847;border-radius:8px;background:white;color:#05A847;cursor:pointer;font-weight:700;">↕️ 並び替え</button>
           <button onclick="if(gasUrl)fetchAllFromGAS();" id="approvalFetchBtn" style="font-size:12px;padding:4px 10px;border:1.5px solid var(--border);border-radius:8px;background:white;color:var(--subtext);cursor:pointer;">🔄 更新</button>
         </div>
       </div>
@@ -2416,6 +2417,31 @@ function approveOtLateNight(userName, dateKey) {
   saveData(); renderAll();
   syncRecordToGAS(userName, dateKey);
   showToast('✅ '+userName+'の深夜残業申請を承認しました（'+rec.ot.lateNight.plannedEnd+'まで）');
+}
+
+// ── 管理者：シート手動並び替え ────────────────────────────────────
+function sortSheetByDateManual() {
+  if (!currentUser || !isAdmin(currentUser)) return;
+  if (!gasUrl) { showToast('GAS URLが設定されていません'); return; }
+  const btn = document.getElementById('sortSheetBtn');
+  if (btn) { btn.textContent = '⏳ 並び替え中...'; btn.disabled = true; }
+  fetch(gasUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify({ action: 'sortSheet' })
+  })
+  .then(r => r.json())
+  .then(json => {
+    if (json && json.ok) {
+      showToast('✅ スプレッドシートを日付順に並び替えました');
+    } else {
+      showToast('❌ 並び替えに失敗しました');
+    }
+  })
+  .catch(() => { showToast('❌ GASへの接続に失敗しました'); })
+  .finally(() => {
+    if (btn) { btn.textContent = '↕️ 並び替え'; btn.disabled = false; }
+  });
 }
 
 // ── 管理者：過去残業代理入力 ──────────────────────────────────────

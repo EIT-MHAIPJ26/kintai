@@ -1622,6 +1622,11 @@ if (!data.users.find(u => (typeof u==='string'?u:u.name) === '大井拓登')) {
   data.users.push({ name:'大井拓登', role:'member' });
   saveData();
 }
+// 中山輝美が未登録なら追加（外部スタッフ）
+if (!data.users.find(u => (typeof u==='string'?u:u.name) === '中山輝美')) {
+  data.users.push({ name:'中山輝美', role:'member', type:'external' });
+  saveData();
+}
 
 // 休日申請データをworkDate行へ一度だけ移行
 (function() {
@@ -1799,6 +1804,14 @@ function getUserRole(name) {
 }
 function getUserNames() { return data.users.map(u => typeof u==='string'?u:u.name); }
 function isAdmin(name) { return getUserRole(name) === 'admin'; }
+function isExternal(name) {
+  const u = data.users.find(u => (typeof u==='string'?u:u.name) === name);
+  return u && typeof u === 'object' && u.type === 'external';
+}
+function getUserType(name) {
+  const u = data.users.find(u => (typeof u==='string'?u:u.name) === name);
+  return (u && typeof u === 'object' && u.type) || 'regular';
+}
 
 // ============================================================
 //  パスワード管理
@@ -1903,15 +1916,29 @@ function renderLoginSection() {
   document.getElementById('loggedinSection').style.display = loggedIn ? '' : 'none';
 
   if (!loggedIn) {
-    // ログイン選択肢を構築
+    // ログイン選択肢を構築（社員とパート・外部スタッフを分けて表示）
     const sel = document.getElementById('loginSelect');
     sel.innerHTML = '<option value="">-- 名前を選択 --</option>';
-    getUserNames().forEach(n => {
+    const regularNames = getUserNames().filter(n => !isExternal(n));
+    const externalNames = getUserNames().filter(n => isExternal(n));
+    regularNames.forEach(n => {
       const opt = document.createElement('option');
       opt.value = n;
       opt.textContent = (isAdmin(n) ? '🔑 ' : '👤 ') + n;
       sel.appendChild(opt);
     });
+    if (externalNames.length > 0) {
+      const sep = document.createElement('option');
+      sep.disabled = true;
+      sep.textContent = '── パート・外部スタッフ ──';
+      sel.appendChild(sep);
+      externalNames.forEach(n => {
+        const opt = document.createElement('option');
+        opt.value = n;
+        opt.textContent = '🟡 ' + n;
+        sel.appendChild(opt);
+      });
+    }
   } else {
     document.getElementById('loggedinName').textContent = currentUser;
     const roleEl = document.getElementById('loggedinRole');
@@ -1950,10 +1977,10 @@ function renderMemberList() {
     const item = document.createElement('div');
     item.className = 'member-list-item';
     item.innerHTML = `
-      <div class="member-avatar ${role}">${role==='admin'?'🔑':'👤'}</div>
+      <div class="member-avatar ${role}">${role==='admin'?'🔑':isExternal(n)?'🟡':'👤'}</div>
       <div class="member-info">
         <div class="m-name">${n}${isActive?' <span style="font-size:10px;color:var(--primary-dark)">（使用中）</span>':''}</div>
-        <div class="m-role ${role}">${role==='admin'?'管理者':'メンバー'}</div>
+        <div class="m-role ${role}">${role==='admin'?'管理者':isExternal(n)?'パート・外部':'メンバー'}</div>
       </div>
       <div class="member-actions">
         <button class="btn-switch-user" onclick="showSetPasswordModal('${n}')" title="パスワード設定" style="font-size:13px;">🔑</button>
@@ -5123,9 +5150,13 @@ function renderMemberStatus() {
   const order = {working:0, done:1, absent:2};
   rows.sort((a,b) => order[a.state]-order[b.state] || a.name.localeCompare(b.name,'ja'));
 
+  const regularRows  = rows.filter(r => !isExternal(r.name));
+  const externalRows = rows.filter(r =>  isExternal(r.name));
+
   const grid = document.getElementById('memberStatusGrid');
   grid.innerHTML = '';
-  rows.forEach(r => {
+
+  function appendRow(r) {
     let timeTxt;
     if (r.pairs.length === 0) {
       timeTxt = '<span style="color:var(--subtext)">---</span>';
@@ -5185,7 +5216,19 @@ function renderMemberStatus() {
         ${durTxt ? `<div class="ms-dur">${durTxt}</div>` : ''}
       </div>`;
     grid.appendChild(item);
-  });
+  }
+
+  // 社員を表示
+  regularRows.forEach(appendRow);
+
+  // 外部スタッフがいれば区切りを追加して別セクション表示
+  if (externalRows.length > 0) {
+    const divider = document.createElement('div');
+    divider.style.cssText = 'width:100%;margin:12px 0 6px;padding:5px 10px;background:#FFF8E1;border-radius:8px;font-size:12px;font-weight:700;color:#8B6914;border:1px solid #FFE082;';
+    divider.textContent = '🟡 パート・外部スタッフ';
+    grid.appendChild(divider);
+    externalRows.forEach(appendRow);
+  }
 }
 
 // ============================================================

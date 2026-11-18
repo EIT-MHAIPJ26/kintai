@@ -4743,9 +4743,11 @@ function renderWeekSummary() {
         if(workH) durHtml=workH+'（勤務時間）';
       }
     }
+    const weekBadges = rec ? buildAppBadgesHtml(rec) : '';
     const row=document.createElement('div');
     row.className='week-row'+(isToday?' today':'')+(pairs.length===0?' absent':'');
-    row.innerHTML=`<span class="wr-day">${dayLabel}</span><span class="wr-times">${timesHtml}</span>${durHtml?`<span class="wr-dur">${durHtml}</span>`:''}`;
+    row.style.flexWrap = 'wrap';
+    row.innerHTML=`<span class="wr-day">${dayLabel}</span><span class="wr-times">${timesHtml}</span>${durHtml?`<span class="wr-dur">${durHtml}</span>`:''}${weekBadges?`<div style="width:100%;padding-left:0;margin-top:3px;">${weekBadges}</div>`:''}`;
     grid.appendChild(row);
   }
 }
@@ -4756,9 +4758,9 @@ function renderMonthView() {
   document.getElementById('monthTitle').textContent=year+'年'+(month+1)+'月';
   const recs=getUserRecords();
   let days=0,totalMin=0,otCount=0;
-  Object.keys(recs).forEach(key=>{
-    const d=new Date(key.replace(/-/g,'/'));
-    if(d.getFullYear()!==year||d.getMonth()!==month)return;
+  const monthKey = year+'-'+String(month+1).padStart(2,'0');
+  const monthKeys = Object.keys(recs).filter(k=>k.startsWith(monthKey)).sort().reverse();
+  monthKeys.forEach(key=>{
     const rec=migrateRec(recs[key]);
     const isToday=key===todayKey();
     const min=totalMinForRec(rec,isToday);
@@ -4781,6 +4783,31 @@ function changeHistoryMonth(delta) {
   if (newKey > todayKey().substring(0, 7)) return;
   historyMonth = newKey;
   renderHistory();
+}
+
+// ── 申請バッジHTML生成ヘルパー ──
+function buildAppBadgesHtml(rec) {
+  const badges = [];
+  const statusLabel = { pending:'申請中', approved:'承認済み', revoked:'取消済み' };
+  const statusColor = {
+    pending:  { bg:'#FFF4E5', border:'#F5A623', text:'#B86000' },
+    approved: { bg:'#E6F9EE', border:'#2DBF6A', text:'#1A7A42' },
+    revoked:  { bg:'#F5F5F5', border:'#AAAAAA', text:'#777777' }
+  };
+  function badge(icon, label, status) {
+    const c = statusColor[status];
+    if (!c) return;
+    badges.push(`<span style="display:inline-flex;align-items:center;gap:3px;font-size:11px;padding:2px 7px;border-radius:12px;background:${c.bg};border:1px solid ${c.border};color:${c.text};white-space:nowrap;">${icon} ${label}（${statusLabel[status]||status}）</span>`);
+  }
+  if (rec.ot && rec.ot.status && rec.ot.status !== 'rejected') badge('🌙', '残業', rec.ot.status);
+  if (rec.ot?.extension && rec.ot.extension.status && rec.ot.extension.status !== 'rejected') badge('⏰', '残業延長', rec.ot.extension.status);
+  if (rec.ot?.lateNight && rec.ot.lateNight.status && rec.ot.lateNight.status !== 'rejected') badge('🌃', '深夜残業', rec.ot.lateNight.status);
+  if (rec.early && rec.early.status && rec.early.status !== 'rejected') badge('🌅', '早出', rec.early.status);
+  const holArr = Array.isArray(rec.holiday) ? rec.holiday : (rec.holiday ? [rec.holiday] : []);
+  holArr.filter(h => h && h.status && h.status !== 'rejected').forEach(h => badge('📅', '休日出勤', h.status));
+  const paidArr = Array.isArray(rec.paid) ? rec.paid : (rec.paid ? [rec.paid] : []);
+  paidArr.filter(p => p && p.status && p.status !== 'rejected').forEach(p => badge('🌸', '有給', p.status));
+  return badges.length > 0 ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:5px;">${badges.join('')}</div>` : '';
 }
 
 function renderHistory() {
@@ -4834,50 +4861,7 @@ function renderHistory() {
     }
 
     // ── 申請ステータスバッジ ──
-    let appsHtml = '';
-    (function() {
-      const badges = [];
-      const statusLabel = { pending:'申請中', approved:'承認済み', revoked:'取消済み' };
-      const statusColor = {
-        pending:  { bg:'#FFF4E5', border:'#F5A623', text:'#B86000' },
-        approved: { bg:'#E6F9EE', border:'#2DBF6A', text:'#1A7A42' },
-        revoked:  { bg:'#F5F5F5', border:'#AAAAAA', text:'#777777' }
-      };
-      function badge(icon, label, status) {
-        const c = statusColor[status];
-        if (!c) return;
-        badges.push(`<span style="display:inline-flex;align-items:center;gap:3px;font-size:11px;padding:2px 7px;border-radius:12px;background:${c.bg};border:1px solid ${c.border};color:${c.text};white-space:nowrap;">${icon} ${label}${statusLabel[status] ? '（'+statusLabel[status]+'）' : ''}</span>`);
-      }
-      // 残業
-      if (rec.ot && rec.ot.status && rec.ot.status !== 'rejected') {
-        badge('🌙', '残業', rec.ot.status);
-      }
-      // 残業延長
-      if (rec.ot?.extension && rec.ot.extension.status && rec.ot.extension.status !== 'rejected') {
-        badge('⏰', '残業延長', rec.ot.extension.status);
-      }
-      // 深夜残業
-      if (rec.ot?.lateNight && rec.ot.lateNight.status && rec.ot.lateNight.status !== 'rejected') {
-        badge('🌃', '深夜残業', rec.ot.lateNight.status);
-      }
-      // 早出
-      if (rec.early && rec.early.status && rec.early.status !== 'rejected') {
-        badge('🌅', '早出', rec.early.status);
-      }
-      // 休日出勤
-      const holArr = Array.isArray(rec.holiday) ? rec.holiday : (rec.holiday ? [rec.holiday] : []);
-      holArr.filter(h => h && h.status && h.status !== 'rejected').forEach(h => {
-        badge('📅', '休日出勤', h.status);
-      });
-      // 有給
-      const paidArr = Array.isArray(rec.paid) ? rec.paid : (rec.paid ? [rec.paid] : []);
-      paidArr.filter(p => p && p.status && p.status !== 'rejected').forEach(p => {
-        badge('🌸', '有給', p.status);
-      });
-      if (badges.length > 0) {
-        appsHtml = `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:5px;">${badges.join('')}</div>`;
-      }
-    })();
+    const appsHtml = buildAppBadgesHtml(rec);
 
     // ── 打刻漏れ警告（過去日のみ）──
     let warnHtml = '';
